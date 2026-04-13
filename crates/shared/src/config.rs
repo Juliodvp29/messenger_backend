@@ -75,7 +75,6 @@ pub struct SmsConfig {
 impl Config {
     pub fn load() -> Result<Self, config::ConfigError> {
         let settings = config::Config::builder()
-            // Use double underscore as separator for nested fields (e.g. JWT__SECRET -> jwt.secret)
             .add_source(config::Environment::default().separator("__"))
             .build()?;
 

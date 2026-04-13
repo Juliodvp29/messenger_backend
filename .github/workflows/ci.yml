@@ -1,0 +1,85 @@
+name: CI - Messenger Backend
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  CARGO_TERM_COLOR: always
+  APP_ENV: development
+  # No need for real secrets in CI, just dummy values for validation
+  JWT__SECRET: abcdefghijklmnopqrstuvwxyz1234567890abcdefghijklmnopqrstuvwxyz123
+  JWT__REFRESH_SECRET: abcdefghijklmnopqrstuvwxyz1234567890abcdefghijklmnopqrstuvwxyz123
+  JWT__ACCESS_TTL_SECONDS: 900
+  JWT__REFRESH_TTL_SECONDS: 2592000
+  SERVER__HOST: 0.0.0.0
+  SERVER__PORT: 3000
+  SERVER__CORS_ORIGINS: "*"
+  SERVER__RATE_LIMIT_ENABLED: false
+  DATABASE__URL: postgres://messenger:messenger_secret@localhost:5434/messenger_test
+  REDIS__URL: redis://localhost:6379
+  DATABASE__MAX_CONNECTIONS: 5
+  DATABASE__MIN_CONNECTIONS: 1
+  REDIS__MAX_CONNECTIONS: 5
+  S3__ENDPOINT: http://localhost:9000
+  S3__BUCKET: test-bucket
+  S3__ACCESS_KEY_ID: minioadmin
+  S3__SECRET_ACCESS_KEY: minioadmin123
+  S3__REGION: us-east-1
+  SMTP__HOST: localhost
+  SMTP__PORT: 1025
+  SMTP__FROM: test@messenger.local
+  SMS__PROVIDER: test
+  SMS__API_KEY: test
+  SMS__SENDER_ID: test
+
+jobs:
+  quality:
+    name: Calidad de Código
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt, clippy
+      - name: Rustfmt Check
+        run: cargo fmt --all -- --check
+      - name: Clippy Lint
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test:
+    name: Tests Unitarios e Integración
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: messenger_test
+          POSTGRES_USER: messenger
+          POSTGRES_PASSWORD: messenger_secret
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@nightly
+      - name: Run Tests
+        run: cargo test --workspace
