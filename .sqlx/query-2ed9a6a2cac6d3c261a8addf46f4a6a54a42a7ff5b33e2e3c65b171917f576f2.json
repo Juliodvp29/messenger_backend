@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO user_keys (user_id, identity_key, signed_prekey, signed_prekey_id, signed_prekey_sig)\n            VALUES ($1, $2, $3, $4, $5)\n            ON CONFLICT (user_id) DO UPDATE SET\n                identity_key = EXCLUDED.identity_key,\n                signed_prekey = EXCLUDED.signed_prekey,\n                signed_prekey_id = EXCLUDED.signed_prekey_id,\n                signed_prekey_sig = EXCLUDED.signed_prekey_sig,\n                updated_at = NOW()\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Int4",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2ed9a6a2cac6d3c261a8addf46f4a6a54a42a7ff5b33e2e3c65b171917f576f2"
+}

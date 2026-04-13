@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT \n                user_id,\n                identity_key,\n                signed_prekey,\n                signed_prekey_id,\n                signed_prekey_sig,\n                prekey_count\n            FROM user_keys\n            WHERE user_id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "identity_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "signed_prekey",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "signed_prekey_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "signed_prekey_sig",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "prekey_count",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "7ebac8cb00ce48201dc489a67fdf35fdc31795f91ca4133d9483cd568468beab"
+}

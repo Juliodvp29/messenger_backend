@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO one_time_prekeys (user_id, key_id, public_key)\n                VALUES ($1, $2, $3)\n                ON CONFLICT (user_id, key_id) DO NOTHING\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "234da1ee441b2c938b61197d374daf4bbf62b30e82aa38265277da48477796e1"
+}

@@ -12,6 +12,12 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
+[workspace.lints.rust]
+async_fn_in_trait = "allow"
+
+[workspace.lints.clippy]
+# Add clippy lints here if needed
+
 [workspace.dependencies]
 # Web
 axum = { version = "0.7", features = ["ws", "multipart"] }

@@ -7,9 +7,13 @@ use crate::handlers::auth::{
     delete_session, list_sessions, login, login_verify, logout, recover, recover_verify, refresh,
     register, two_fa_setup, two_fa_setup_verify, two_fa_verify, verify_phone,
 };
+use crate::handlers::keys::{
+    KeysState, get_fingerprint, get_key_bundle, get_my_prekey_count, upload_keys, upload_prekeys,
+};
 use crate::middleware::auth::{AuthMiddlewareState, auth_middleware};
 use crate::services::jwt::JwtService;
 use crate::services::otp::OtpService;
+use infrastructure::repositories::keys::PostgresKeyRepository;
 use infrastructure::repositories::user::PostgresUserRepository;
 use redis::aio::ConnectionManager;
 use shared::config::Config;
@@ -21,6 +25,7 @@ pub fn create_router(
     redis_manager: ConnectionManager,
 ) -> Router {
     let user_repo = Arc::new(PostgresUserRepository::new(db_pool.clone()));
+    let key_repo = Arc::new(PostgresKeyRepository::new(db_pool.clone()));
 
     let otp_service = Arc::new(OtpService::new(redis_manager.clone(), 600));
 
@@ -39,9 +44,13 @@ pub fn create_router(
     });
 
     let auth_state = crate::handlers::auth::AuthState {
-        user_repo,
+        user_repo: user_repo.clone(),
         otp_service,
         jwt_service: jwt_service.clone(),
+    };
+
+    let keys_state = KeysState {
+        key_repo: key_repo.clone(),
     };
 
     let protected_auth_routes = Router::new()
@@ -51,9 +60,21 @@ pub fn create_router(
         .route("/auth/sessions/:session_id", delete(delete_session))
         .route("/auth/logout", post(logout))
         .route_layer(middleware::from_fn_with_state(
-            auth_middleware_state,
+            auth_middleware_state.clone(),
             auth_middleware,
         ));
+
+    let protected_keys_routes = Router::new()
+        .route("/keys/upload", post(upload_keys))
+        .route("/keys/upload-prekeys", post(upload_prekeys))
+        .route("/keys/me/count", get(get_my_prekey_count))
+        .route("/keys/:user_id", get(get_key_bundle))
+        .route("/keys/:user_id/fingerprint", get(get_fingerprint))
+        .route_layer(middleware::from_fn_with_state(
+            auth_middleware_state,
+            auth_middleware,
+        ))
+        .with_state(keys_state);
 
     Router::new()
         .route("/health", get(health))
@@ -66,6 +87,7 @@ pub fn create_router(
         .route("/auth/2fa/verify", post(two_fa_verify))
         .route("/auth/refresh", post(refresh))
         .merge(protected_auth_routes)
+        .merge(protected_keys_routes)
         .with_state(auth_state)
 }
 

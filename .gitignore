@@ -21,11 +21,13 @@ Thumbs.db
 *.log
 
 # SQLx
-sqlx-data.json
 schema.sql
+# .sqlx/ and sqlx-data.json must be tracked for CI
 
 #Postman
 phase03_endpoints.json
 
 #Error
+
 *.err
+
