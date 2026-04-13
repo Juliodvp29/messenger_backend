@@ -11,6 +11,7 @@ use uuid::Uuid;
 use crate::error::ApiError;
 use crate::middleware::auth::AuthenticatedUser;
 use crate::services::jwt::{JwtService, RefreshData};
+use redis::AsyncCommands;
 use crate::services::otp::OtpService;
 use domain::user::entity::User;
 use domain::user::repository::UserRepository;
@@ -623,6 +624,28 @@ pub async fn delete_session(
         StatusCode::OK,
         Json(MessageResponse {
             message: "Sesion eliminada".to_string(),
+        }),
+    )
+        .into_response())
+}
+
+pub async fn logout(
+    State(state): State<AuthState>,
+    Extension(auth): Extension<AuthenticatedUser>,
+) -> Result<Response, ApiError> {
+    state.user_repo.delete_session(auth.user_id, auth.session_id).await?;
+
+    let mut redis = state.otp_service.redis.clone();
+    let session_key = format!("session:{}", auth.session_id);
+    let _: () = redis.del(session_key).await.map_err(|e| DomainError::Internal(e.to_string()))?;
+
+    let refresh_key = format!("refresh:{}", auth.session_id);
+    let _: () = redis.del(refresh_key).await.map_err(|e| DomainError::Internal(e.to_string()))?;
+
+    Ok((
+        StatusCode::OK,
+        Json(MessageResponse {
+            message: "Logout exitoso".to_string(),
         }),
     )
         .into_response())

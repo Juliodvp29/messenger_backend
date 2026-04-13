@@ -3,7 +3,7 @@ use redis::aio::ConnectionManager;
 
 #[derive(Clone)]
 pub struct OtpService {
-    redis: ConnectionManager,
+    pub redis: ConnectionManager,
     otp_ttl: u64,
 }
 
