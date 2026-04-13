@@ -25,8 +25,15 @@ impl Email {
         if value.contains('@') && value.contains('.') {
             Ok(Self(value))
         } else {
-            Err(DomainError::Validation(format!("Invalid email format: {}", value)))
+            Err(DomainError::Validation(format!(
+                "Invalid email format: {}",
+                value
+            )))
         }
+    }
+
+    pub(crate) fn new_unchecked(value: String) -> Self {
+        Self(value)
     }
 
     pub fn as_str(&self) -> &str {
@@ -39,12 +46,22 @@ pub struct PhoneNumber(String);
 
 impl PhoneNumber {
     pub fn new(value: String) -> DomainResult<Self> {
-        // Simple E.164 validation: starts with + followed by 7-15 digits
-        if value.starts_with('+') && value.len() >= 8 && value.len() <= 16 && value[1..].chars().all(|c| c.is_ascii_digit()) {
+        if value.starts_with('+')
+            && value.len() >= 8
+            && value.len() <= 16
+            && value[1..].chars().all(|c| c.is_ascii_digit())
+        {
             Ok(Self(value))
         } else {
-            Err(DomainError::Validation(format!("Invalid phone number format (E.164 required): {}", value)))
+            Err(DomainError::Validation(format!(
+                "Invalid phone number format (E.164 required): {}",
+                value
+            )))
         }
+    }
+
+    pub(crate) fn new_unchecked(value: String) -> Self {
+        Self(value)
     }
 
     pub fn as_str(&self) -> &str {
@@ -57,11 +74,21 @@ pub struct Username(String);
 
 impl Username {
     pub fn new(value: String) -> DomainResult<Self> {
-        if value.len() >= 3 && value.len() <= 32 && value.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        if value.len() >= 3
+            && value.len() <= 32
+            && value.chars().all(|c| c.is_alphanumeric() || c == '_')
+        {
             Ok(Self(value))
         } else {
-            Err(DomainError::Validation(format!("Invalid username: {}", value)))
+            Err(DomainError::Validation(format!(
+                "Invalid username: {}",
+                value
+            )))
         }
+    }
+
+    pub(crate) fn new_unchecked(value: String) -> Self {
+        Self(value)
     }
 
     pub fn as_str(&self) -> &str {
@@ -77,7 +104,9 @@ impl PasswordHash {
         if !value.is_empty() {
             Ok(Self(value))
         } else {
-            Err(DomainError::Validation("Password hash cannot be empty".to_string()))
+            Err(DomainError::Validation(
+                "Password hash cannot be empty".to_string(),
+            ))
         }
     }
 }
@@ -95,14 +124,14 @@ mod tests {
     #[test]
     fn test_phone_validation() {
         assert!(PhoneNumber::new("+573001234567".to_string()).is_ok());
-        assert!(PhoneNumber::new("3001234567".to_string()).is_err()); // missing +
-        assert!(PhoneNumber::new("+1234".to_string()).is_err()); // too short
+        assert!(PhoneNumber::new("3001234567".to_string()).is_err());
+        assert!(PhoneNumber::new("+1234".to_string()).is_err());
     }
 
     #[test]
     fn test_username_validation() {
         assert!(Username::new("julio_dev".to_string()).is_ok());
-        assert!(Username::new("ju".to_string()).is_err()); // too short
-        assert!(Username::new("invalid name!".to_string()).is_err()); // invalid chars
+        assert!(Username::new("ju".to_string()).is_err());
+        assert!(Username::new("invalid name!".to_string()).is_err());
     }
 }

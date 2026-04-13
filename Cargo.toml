@@ -58,6 +58,9 @@ lettre = { version = "0.11", features = ["tokio1", "tokio1-native-tls"] }
 config = "0.14"
 dotenvy = "0.15"
 
+# Tests
+fake = { version = "2.9", features = ["derive"] }
+
 # Local Crates
 api = { path = "crates/api" }
 domain = { path = "crates/domain" }
