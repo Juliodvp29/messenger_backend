@@ -38,6 +38,7 @@ totp-rs = { version = "5", features = ["qr"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 validator = { version = "0.19", features = ["derive"] }
+rand = "0.8"
 
 # Errores
 thiserror = "1"
