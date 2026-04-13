@@ -164,9 +164,9 @@ impl UserRepository for PostgresUserRepository {
 fn map_record_to_user(rec: UserRecord) -> DomainResult<User> {
     Ok(User {
         id: UserId(rec.id),
-        username: rec.username.map(|u| Username::new(u)).transpose()?,
+        username: rec.username.map(Username::new).transpose()?,
         phone: PhoneNumber::new(rec.phone)?,
-        email: rec.email.map(|e| Email::new(e)).transpose()?,
+        email: rec.email.map(Email::new).transpose()?,
         password_hash: PasswordHash(rec.password_hash),
         status_text: rec.status_text.unwrap_or_default(),
         two_fa_enabled: rec.two_fa_enabled,
