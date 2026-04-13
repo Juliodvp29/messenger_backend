@@ -1,7 +1,7 @@
 use axum::{
     Extension, Json,
     extract::{Path, State},
-    http::StatusCode,
+    http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
 use std::sync::Arc;
@@ -35,6 +35,14 @@ pub async fn upload_keys(
         return Ok((
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({"error": "signed_prekey is incomplete"})),
+        )
+            .into_response());
+    }
+
+    if let Err(e) = verify_signed_prekey(&req.identity_key, &req.signed_prekey.key, &req.signed_prekey.signature) {
+        return Ok((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": format!("invalid signed_prekey signature: {}", e)})),
         )
             .into_response());
     }
@@ -76,13 +84,18 @@ pub async fn upload_keys(
         .await
         .map_err(|e| ApiError(DomainError::Internal(e.to_string())))?;
 
-    Ok((
+    let mut response = (
         StatusCode::OK,
         Json(UploadKeysResponse {
             prekey_count: count,
         }),
-    )
-        .into_response())
+    );
+
+    if count < 20 {
+        response.0 = StatusCode::OK;
+    }
+
+    Ok(with_prekey_header(response, count).into_response())
 }
 
 pub async fn upload_prekeys(
@@ -118,13 +131,14 @@ pub async fn upload_prekeys(
         .await
         .map_err(|e| ApiError(DomainError::Internal(e.to_string())))?;
 
-    Ok((
+    let response = (
         StatusCode::OK,
         Json(UploadKeysResponse {
             prekey_count: count,
         }),
-    )
-        .into_response())
+    );
+
+    Ok(with_prekey_header(response, count).into_response())
 }
 
 pub async fn get_key_bundle(
@@ -168,14 +182,15 @@ pub async fn get_key_bundle(
             .into_response());
     }
 
-    let keys = state
+    let bundle = state
         .key_repo
-        .get_keys(target_user_id)
+        .get_public_key_bundle(target_user_id)
         .await
         .map_err(|e| ApiError(DomainError::Internal(e.to_string())))?;
 
-    let keys =
-        keys.ok_or_else(|| ApiError(DomainError::NotFound("user keys not found".to_string())))?;
+    let bundle = bundle.ok_or_else(|| {
+        ApiError(DomainError::NotFound("user keys not found".to_string()))
+    })?;
 
     let count = state
         .key_repo
@@ -184,19 +199,27 @@ pub async fn get_key_bundle(
         .map_err(|e| ApiError(DomainError::Internal(e.to_string())))?;
 
     if count < 20 {
-        tracing::warn!("User {} has low prekey count: {}", target_user_id, count);
+        tracing::warn!(
+            "User {} has low prekey count: {}",
+            target_user_id,
+            count
+        );
     }
 
-    Ok(Json(KeyBundleResponse {
-        identity_key: keys.identity_key,
+    let response = Json(KeyBundleResponse {
+        identity_key: bundle.identity_key,
         signed_prekey: SignedPrekeyResponse {
-            id: keys.signed_prekey.id,
-            key: keys.signed_prekey.key,
-            signature: keys.signed_prekey.signature,
+            id: bundle.signed_prekey_id,
+            key: bundle.signed_prekey,
+            signature: bundle.signed_prekey_sig,
         },
-        one_time_prekey: None,
-    })
-    .into_response())
+        one_time_prekey: bundle.one_time_prekey.map(|key| OneTimePrekeyResponse {
+            id: bundle.one_time_prekey_id.unwrap_or(0),
+            key,
+        }),
+    });
+
+    Ok(with_prekey_header((StatusCode::OK, response), count).into_response())
 }
 
 pub async fn get_fingerprint(
@@ -225,14 +248,21 @@ pub async fn get_fingerprint(
     let (fingerprint, your_key, their_key) =
         compute_fingerprint(&your_keys.identity_key, &their_keys.identity_key);
 
-    Ok(Json(FingerprintResponse {
+    let count = state
+        .key_repo
+        .get_prekey_count(auth.user_id)
+        .await
+        .map_err(|e| ApiError(DomainError::Internal(e.to_string())))?;
+
+    let response = Json(FingerprintResponse {
         fingerprint,
         your_key,
         their_key,
         key_changed: None,
         changed_at: None,
-    })
-    .into_response())
+    });
+
+    Ok(with_prekey_header((StatusCode::OK, response), count).into_response())
 }
 
 pub async fn get_my_prekey_count(
@@ -245,7 +275,23 @@ pub async fn get_my_prekey_count(
         .await
         .map_err(|e| ApiError(DomainError::Internal(e.to_string())))?;
 
-    Ok(Json(PrekeyCountResponse { count }).into_response())
+    let response = Json(PrekeyCountResponse { count });
+
+    Ok(with_prekey_header((StatusCode::OK, response), count).into_response())
+}
+
+fn with_prekey_header(response: impl IntoResponse, prekey_count: i32) -> impl IntoResponse {
+    if prekey_count < 20 {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::HeaderName::from_static("x-prekey-count"),
+            prekey_count.to_string().parse().unwrap(),
+        );
+        (headers, response)
+    } else {
+        let headers = HeaderMap::new();
+        (headers, response)
+    }
 }
 
 fn compute_fingerprint(key1: &str, key2: &str) -> (String, String, String) {
@@ -266,4 +312,55 @@ fn compute_fingerprint(key1: &str, key2: &str) -> (String, String, String) {
     let fingerprint = format!("{} {}", &fingerprint[..30], &fingerprint[30..60]);
 
     (fingerprint, key1.to_string(), key2.to_string())
+}
+
+fn verify_signed_prekey(
+    identity_key_b64: &str,
+    signed_prekey_b64: &str,
+    signature_b64: &str,
+) -> Result<(), String> {
+    use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+
+    let identity_key_bytes = BASE64
+        .decode(identity_key_b64)
+        .map_err(|e| format!("invalid identity_key base64: {}", e))?;
+
+    if identity_key_bytes.len() != 32 {
+        return Err("identity_key must be 32 bytes".to_string());
+    }
+
+    let identity_key = VerifyingKey::from_bytes(
+        identity_key_bytes
+            .as_slice()
+            .try_into()
+            .map_err(|_| "invalid identity_key length")?,
+    )
+    .map_err(|e| format!("invalid identity_key: {}", e))?;
+
+    let spk_bytes = BASE64
+        .decode(signed_prekey_b64)
+        .map_err(|e| format!("invalid signed_prekey base64: {}", e))?;
+
+    if spk_bytes.len() != 32 {
+        return Err("signed_prekey must be 32 bytes".to_string());
+    }
+
+    let sig_bytes = BASE64
+        .decode(signature_b64)
+        .map_err(|e| format!("invalid signature base64: {}", e))?;
+
+    if sig_bytes.len() != 64 {
+        return Err("signature must be 64 bytes".to_string());
+    }
+
+    let signature = Signature::from_bytes(sig_bytes.as_slice().try_into().map_err(
+        |_| "invalid signature length",
+    )?);
+
+    identity_key
+        .verify(spk_bytes.as_slice(), &signature)
+        .map_err(|e| format!("signature verification failed: {}", e))?;
+
+    Ok(())
 }

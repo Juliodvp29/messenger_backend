@@ -1,4 +1,4 @@
-use domain::keys::{KeyRepository, OneTimePrekey, SignedPrekey, UserKeys};
+use domain::keys::{KeyBundleWithOpk, KeyRepository, OneTimePrekey, SignedPrekey, UserKeys};
 use shared::error::DomainError;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -69,6 +69,22 @@ impl KeyRepository for PostgresKeyRepository {
             .map_err(|e| DomainError::Internal(e.to_string()))?;
         }
 
+        sqlx::query!(
+            r#"
+            UPDATE user_keys
+            SET prekey_count = (
+                SELECT COUNT(*) FROM one_time_prekeys 
+                WHERE user_id = $1 AND is_consumed = FALSE
+            ),
+            updated_at = NOW()
+            WHERE user_id = $1
+            "#,
+            user_id
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
         Ok(())
     }
 
@@ -138,8 +154,7 @@ impl KeyRepository for PostgresKeyRepository {
     async fn get_public_key_bundle(
         &self,
         target_user_id: Uuid,
-    ) -> Result<Option<(String, String, i32, String, Option<i32>, Option<String>)>, DomainError>
-    {
+    ) -> Result<Option<KeyBundleWithOpk>, DomainError> {
         let row = sqlx::query_as(
             r#"
             SELECT * FROM get_user_public_keys($1)
@@ -150,7 +165,14 @@ impl KeyRepository for PostgresKeyRepository {
         .await
         .map_err(|e| DomainError::Internal(e.to_string()))?;
 
-        Ok(row.map(|r: (String, String, i32, String, Option<i32>, Option<String>)| r))
+        Ok(row.map(|r: (String, String, i32, String, Option<i32>, Option<String>)| KeyBundleWithOpk {
+            identity_key: r.0,
+            signed_prekey: r.1,
+            signed_prekey_id: r.2,
+            signed_prekey_sig: r.3,
+            one_time_prekey_id: r.4,
+            one_time_prekey: r.5,
+        }))
     }
 }
 
