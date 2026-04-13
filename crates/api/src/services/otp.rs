@@ -167,10 +167,19 @@ impl OtpService {
         let mut con = self.redis.clone();
         let rate_key = format!("rate:{}", key);
 
-        let count: u64 = con.incr(rate_key.clone(), 1).await?;
-        if count == 1 {
-            let _: bool = con.expire(rate_key, window as i64).await?;
-        }
+        let lua_script = r#"
+            local count = redis.call('INCR', KEYS[1])
+            if count == 1 then
+                redis.call('EXPIRE', KEYS[1], ARGV[1])
+            end
+            return count
+        "#;
+
+        let count: u64 = redis::Script::new(lua_script)
+            .key(&rate_key)
+            .arg(window)
+            .invoke_async(&mut con)
+            .await?;
 
         Ok(count <= limit)
     }

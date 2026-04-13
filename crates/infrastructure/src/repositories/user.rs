@@ -108,6 +108,22 @@ impl PostgresUserRepository {
 
         Ok(result.rows_affected() > 0)
     }
+
+    pub async fn is_session_valid(&self, user_id: Uuid, session_id: Uuid) -> DomainResult<bool> {
+        let exists: Option<i32> = sqlx::query_scalar(
+            r#"
+            SELECT 1 FROM user_sessions 
+            WHERE id = $1 AND user_id = $2 AND expires_at > NOW()
+            "#,
+        )
+        .bind(session_id)
+        .bind(user_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        Ok(exists.is_some())
+    }
 }
 
 #[derive(sqlx::FromRow)]

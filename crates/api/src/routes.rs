@@ -7,7 +7,7 @@ use crate::handlers::auth::{
     delete_session, list_sessions, login, login_verify, logout, recover, recover_verify, refresh,
     register, two_fa_setup, two_fa_setup_verify, two_fa_verify, verify_phone,
 };
-use crate::middleware::auth::auth_middleware;
+use crate::middleware::auth::{AuthMiddlewareState, auth_middleware};
 use crate::services::jwt::JwtService;
 use crate::services::otp::OtpService;
 use infrastructure::repositories::user::PostgresUserRepository;
@@ -29,7 +29,14 @@ pub fn create_router(
         config.jwt.refresh_secret.clone(),
         config.jwt.access_ttl_seconds,
         config.jwt.refresh_ttl_seconds,
+        Some(redis_manager.clone()),
     ));
+
+    let auth_middleware_state = Arc::new(AuthMiddlewareState {
+        jwt_service: jwt_service.clone(),
+        redis: redis_manager.clone(),
+        user_repo: user_repo.clone(),
+    });
 
     let auth_state = crate::handlers::auth::AuthState {
         user_repo,
@@ -44,7 +51,7 @@ pub fn create_router(
         .route("/auth/sessions/:session_id", delete(delete_session))
         .route("/auth/logout", post(logout))
         .route_layer(middleware::from_fn_with_state(
-            jwt_service.clone(),
+            auth_middleware_state,
             auth_middleware,
         ));
 

@@ -1,4 +1,6 @@
-use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use redis::AsyncCommands;
+use redis::aio::ConnectionManager;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -22,19 +24,37 @@ pub struct RefreshData {
     pub push_token: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RefreshSession {
+    pub user_id: String,
+    pub session_id: String,
+    pub device_id: String,
+    pub device_name: String,
+    pub device_type: String,
+    pub push_token: Option<String>,
+}
+
 #[derive(Clone)]
 pub struct JwtService {
     secret: Vec<u8>,
     access_ttl: u64,
     refresh_ttl: u64,
+    redis: Option<ConnectionManager>,
 }
 
 impl JwtService {
-    pub fn new(secret: String, _refresh_secret: String, access_ttl: u64, refresh_ttl: u64) -> Self {
+    pub fn new(
+        secret: String,
+        _refresh_secret: String,
+        access_ttl: u64,
+        refresh_ttl: u64,
+        redis: Option<ConnectionManager>,
+    ) -> Self {
         Self {
             secret: secret.into_bytes(),
             access_ttl,
             refresh_ttl,
+            redis,
         }
     }
 
@@ -51,12 +71,10 @@ impl JwtService {
             iat: now,
         };
 
-        let token = encode(
-            &Header::default(),
-            &claims,
-            &EncodingKey::from_secret(&self.secret),
-        )
-        .map_err(|e| ServiceError::Internal(e.to_string()))?;
+        let header = Header::new(Algorithm::HS512);
+
+        let token = encode(&header, &claims, &EncodingKey::from_secret(&self.secret))
+            .map_err(|e| ServiceError::Internal(e.to_string()))?;
 
         Ok(token)
     }
@@ -70,24 +88,21 @@ impl JwtService {
             iat: now,
         };
 
-        let token = encode(
-            &Header::default(),
-            &claims,
-            &EncodingKey::from_secret(&self.secret),
-        )
-        .map_err(|e| ServiceError::Internal(e.to_string()))?;
+        let header = Header::new(Algorithm::HS512);
+
+        let token = encode(&header, &claims, &EncodingKey::from_secret(&self.secret))
+            .map_err(|e| ServiceError::Internal(e.to_string()))?;
 
         Ok(token)
     }
 
     pub fn validate_access_token(&self, token: &str) -> Result<AccessClaims, ServiceError> {
-        let claims = decode::<AccessClaims>(
-            token,
-            &DecodingKey::from_secret(&self.secret),
-            &Validation::default(),
-        )
-        .map_err(|e| ServiceError::Unauthorized(e.to_string()))?
-        .claims;
+        let mut validation = Validation::new(Algorithm::HS512);
+        validation.validate_exp = true;
+        let claims =
+            decode::<AccessClaims>(token, &DecodingKey::from_secret(&self.secret), &validation)
+                .map_err(|e| ServiceError::Unauthorized(e.to_string()))?
+                .claims;
 
         let now = chrono::Utc::now().timestamp();
         if claims.exp < now {
@@ -97,26 +112,89 @@ impl JwtService {
         Ok(claims)
     }
 
-    pub fn generate_refresh_token(&self, data: &RefreshData) -> Result<String, ServiceError> {
+    pub fn generate_refresh_token(
+        &self,
+        _session: &RefreshSession,
+    ) -> Result<String, ServiceError> {
         let token = Uuid::new_v4().to_string();
-        let json =
-            serde_json::to_string(data).map_err(|e| ServiceError::Internal(e.to_string()))?;
-
-        Ok(format!("{}:{}", token, json))
+        Ok(token)
     }
 
-    pub fn validate_refresh_token(&self, token: &str) -> Result<RefreshData, ServiceError> {
-        let parts: Vec<&str> = token.splitn(2, ':').collect();
-        if parts.len() != 2 {
-            return Err(ServiceError::Unauthorized(
-                "Invalid token format".to_string(),
-            ));
-        }
+    pub async fn store_refresh_token(
+        &self,
+        token: &str,
+        session: &RefreshSession,
+    ) -> Result<(), ServiceError> {
+        let redis = self
+            .redis
+            .as_ref()
+            .ok_or_else(|| ServiceError::Internal("Redis not configured".to_string()))?;
+        let mut con = redis.clone();
 
-        let data: RefreshData =
-            serde_json::from_str(parts[1]).map_err(|e| ServiceError::Internal(e.to_string()))?;
+        let hash = Self::sha256_hash(token);
+        let key = format!("refresh:{}", hash);
+        let json =
+            serde_json::to_string(session).map_err(|e| ServiceError::Internal(e.to_string()))?;
 
-        Ok(data)
+        let _: () = con
+            .set_ex(key, json, self.refresh_ttl)
+            .await
+            .map_err(|e| ServiceError::Internal(e.to_string()))?;
+
+        Ok(())
+    }
+
+    pub async fn validate_refresh_token(
+        &self,
+        token: &str,
+    ) -> Result<RefreshSession, ServiceError> {
+        let redis = self
+            .redis
+            .as_ref()
+            .ok_or_else(|| ServiceError::Internal("Redis not configured".to_string()))?;
+        let mut con = redis.clone();
+
+        let hash = Self::sha256_hash(token);
+        let key = format!("refresh:{}", hash);
+
+        let session: Option<String> = con
+            .get(&key)
+            .await
+            .map_err(|e| ServiceError::Internal(e.to_string()))?;
+
+        let session = session
+            .ok_or_else(|| ServiceError::Unauthorized("Invalid refresh token".to_string()))?;
+
+        let session: RefreshSession =
+            serde_json::from_str(&session).map_err(|e| ServiceError::Internal(e.to_string()))?;
+
+        let _: usize = con
+            .del(&key)
+            .await
+            .map_err(|e| ServiceError::Internal(e.to_string()))?;
+
+        Ok(session)
+    }
+
+    pub async fn rotate_refresh_token(
+        &self,
+        _old_token: &str,
+        session: &RefreshSession,
+    ) -> Result<String, ServiceError> {
+        let new_token = Uuid::new_v4().to_string();
+
+        self.store_refresh_token(&new_token, session).await?;
+
+        Ok(new_token)
+    }
+
+    fn sha256_hash(input: &str) -> String {
+        use sha2::{Digest, Sha256};
+
+        let mut hasher = Sha256::new();
+        hasher.update(input.as_bytes());
+        let result = hasher.finalize();
+        hex::encode(result)
     }
 
     pub fn access_token_ttl(&self) -> u64 {

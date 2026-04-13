@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::error::ApiError;
 use crate::middleware::auth::AuthenticatedUser;
-use crate::services::jwt::{JwtService, RefreshData};
+use crate::services::jwt::{JwtService, RefreshSession};
 use crate::services::otp::OtpService;
 use domain::user::entity::User;
 use domain::user::repository::UserRepository;
@@ -175,15 +175,19 @@ async fn issue_tokens(
         .jwt_service
         .generate_access_token(&user.id.0, &session_id)?;
 
-    let refresh_data = RefreshData {
-        sub: user.id.0.to_string(),
-        sid: session_id.to_string(),
+    let refresh_session = RefreshSession {
+        user_id: user.id.0.to_string(),
+        session_id: session_id.to_string(),
         device_id: device.device_id,
         device_name: device.device_name,
         device_type: device.device_type,
         push_token: device.push_token,
     };
-    let refresh_token = state.jwt_service.generate_refresh_token(&refresh_data)?;
+    let refresh_token = state.jwt_service.generate_refresh_token(&refresh_session)?;
+    state
+        .jwt_service
+        .store_refresh_token(&refresh_token, &refresh_session)
+        .await?;
 
     Ok(AuthResponse {
         access_token,
@@ -394,23 +398,24 @@ pub async fn refresh(
     State(state): State<AuthState>,
     Json(req): Json<RefreshRequest>,
 ) -> Result<Response, ApiError> {
-    let refresh_data = state
+    let refresh_session = state
         .jwt_service
         .validate_refresh_token(&req.refresh_token)
+        .await
         .map_err(|e| DomainError::Unauthorized(e.to_string()))?;
 
-    let user_id =
-        Uuid::parse_str(&refresh_data.sub).map_err(|e| DomainError::Internal(e.to_string()))?;
+    let user_id = Uuid::parse_str(&refresh_session.user_id)
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
     let user = state
         .user_repo
         .find_by_id(&UserId(user_id))
         .await?
         .ok_or_else(|| DomainError::Unauthorized("Usuario no encontrado".to_string()))?;
     let device = DeviceContext::from_parts(
-        Some(refresh_data.device_id),
-        Some(refresh_data.device_name),
-        Some(refresh_data.device_type),
-        refresh_data.push_token,
+        Some(refresh_session.device_id),
+        Some(refresh_session.device_name),
+        Some(refresh_session.device_type),
+        refresh_session.push_token,
     );
     let auth_response = issue_tokens(&state, &user, device).await?;
 
