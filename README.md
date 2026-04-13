@@ -105,7 +105,7 @@ curl -X POST http://localhost:3000/keys/upload \
 curl -X POST http://localhost:3000/keys/upload-prekeys \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"prekeys":[{"id":1,"key":"OPK1_BASE64"},{"id":2,"key":"OPK2_BASE64"}]}'
+  -d '[{"id":1,"key":"OPK1_BASE64"},{"id":2,"key":"OPK2_BASE64"}]'
 
 # 3. Para iniciar un chat, se solicita el "Bundle" del destinatario
 curl -X GET http://localhost:3000/keys/00000000-0000-0000-0000-000000000002 \
@@ -126,7 +126,7 @@ redis-cli GET otp:register:+573001234567
 # 3. Confirmar registro
 curl -X POST http://localhost:3000/auth/verify-phone \
   -H "Content-Type: application/json" \
-  -d '{"phone":"+573001234567","code":"123456"}'
+  -d '{"phone":"+573001234567","code":"123456","device_id":"uuid","device_name":"TestPhone","device_type":"android"}'
 
 # Response: { "access_token": "...", "refresh_token": "...", "expires_in": 900, "user": {...} }
 ```
@@ -142,7 +142,7 @@ curl -X POST http://localhost:3000/auth/login \
 # 2. Verificar OTP
 curl -X POST http://localhost:3000/auth/login/verify \
   -H "Content-Type: application/json" \
-  -d '{"phone":"+573001234567","code":"123456"}'
+  -d '{"phone":"+573001234567","code":"123456","device_id":"uuid","device_name":"TestPhone","device_type":"android"}'
 ```
 
 ## Inicio Rápido
@@ -222,10 +222,6 @@ Reemplazar `+573001234567` por el número de teléfono usado.
 - Errores centralizados con `thiserror`
 - Middleware de autenticación con JWT
 
-## Documentación Adicional
-
-- [backend_roadmap.md](./backend_roadmap.md) — Plan de desarrollo completo
-- [AGENTS.md](./AGENTS.md) — Instrucciones para agentes IA
 
 ## Seguridad
 
