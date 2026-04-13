@@ -13,7 +13,6 @@ async fn test_create_user(pool: PgPool) -> sqlx::Result<()> {
         Some(domain::user::value_objects::Username("testuser_create".to_string()).unwrap()),
         phone.clone(),
         Some(domain::user::value_objects::Email("test@example.com".to_string()).unwrap()),
-        domain::user::value_objects::PasswordHash("hashed_pass".to_string()),
     );
 
     repo.create(&user).await.expect("Should create user");
@@ -34,7 +33,6 @@ async fn test_find_by_phone(pool: PgPool) -> sqlx::Result<()> {
         Some(domain::user::value_objects::Username("testuser_phone".to_string()).unwrap()),
         phone.clone(),
         None,
-        domain::user::value_objects::PasswordHash("hashed_pass".to_string()),
     );
 
     repo.create(&user).await.expect("Should create user");
@@ -55,7 +53,6 @@ async fn test_update_user(pool: PgPool) -> sqlx::Result<()> {
         Some(domain::user::value_objects::Username("testuser_update".to_string()).unwrap()),
         phone.clone(),
         None,
-        domain::user::value_objects::PasswordHash("hashed_pass".to_string()),
     );
 
     repo.create(&user).await.expect("Should create user");
@@ -79,7 +76,6 @@ async fn test_delete_soft_user(pool: PgPool) -> sqlx::Result<()> {
         Some(domain::user::value_objects::Username("testuser_delete".to_string()).unwrap()),
         phone.clone(),
         None,
-        domain::user::value_objects::PasswordHash("hashed_pass".to_string()),
     );
 
     repo.create(&user).await.expect("Should create user");

@@ -2,12 +2,11 @@
 -- GUARDIA: este script no debe correr en producción
 -- La app verifica APP_ENV antes de permitir el comando make seed
 
--- Users con password hash de 'password123' (argon2id)
--- Password: password123 -> $argon2id$v=19,m=65536,t=3,p=4$... (hash real generado)
-INSERT INTO users (id, phone, password_hash, username, is_active) VALUES
-  ('00000000-0000-0000-0000-000000000001', '+573001000001', '$argon2id$v=19,m=65536,t=3,p=4$M0rZKsrVFLVPHLkpWVPkVw$L0jPpPJWVPkVwL0jPpPJWVPkVwL0jPpPJWVPkVwL0jPpPJWVPkVw', 'alice', true),
-  ('00000000-0000-0000-0000-000000000002', '+573001000002', '$argon2id$v=19,m=65536,t=3,p=4$M0rZKsrVFLVPHLkpWVPkVw$L0jPpPJWVPkVwL0jPpPJWVPkVwL0jPpPJWVPkVwL0jPpPJWVPkVw', 'bob', true),
-  ('00000000-0000-0000-0000-000000000003', '+573001000003', '$argon2id$v=19,m=65536,t=3,p=4$M0rZKsrVFLVPHLkpWVPkVw$L0jPpPJWVPkVwL0jPpPJWVPkVwL0jPpPJWVPkVwL0jPpPJWVPkVw', 'carlos', true);
+-- Users (autenticación por OTP, sin password_hash)
+INSERT INTO users (id, phone, username, is_active) VALUES
+  ('00000000-0000-0000-0000-000000000001', '+573001000001', 'alice', true),
+  ('00000000-0000-0000-0000-000000000002', '+573001000002', 'bob', true),
+  ('00000000-0000-0000-0000-000000000003', '+573001000003', 'carlos', true);
 
 -- User Profiles
 INSERT INTO user_profiles (user_id, display_name) VALUES

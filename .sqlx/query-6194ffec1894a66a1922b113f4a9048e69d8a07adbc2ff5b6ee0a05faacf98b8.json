@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, username, phone, email, password_hash, status_text, two_fa_enabled, two_fa_secret, is_active, last_seen_at, created_at, updated_at, deleted_at \n            FROM users \n            WHERE id = $1 AND deleted_at IS NULL\n            ",
+  "query": "\n            SELECT id, username, phone, email, status_text, two_fa_enabled, two_fa_secret, is_active, last_seen_at, created_at, updated_at, deleted_at \n            FROM users \n            WHERE phone = $1 AND deleted_at IS NULL\n            ",
   "describe": {
     "columns": [
       {
@@ -25,53 +25,48 @@
       },
       {
         "ordinal": 4,
-        "name": "password_hash",
-        "type_info": "Text"
-      },
-      {
-        "ordinal": 5,
         "name": "status_text",
         "type_info": "Text"
       },
       {
-        "ordinal": 6,
+        "ordinal": 5,
         "name": "two_fa_enabled",
         "type_info": "Bool"
       },
       {
-        "ordinal": 7,
+        "ordinal": 6,
         "name": "two_fa_secret",
         "type_info": "Text"
       },
       {
-        "ordinal": 8,
+        "ordinal": 7,
         "name": "is_active",
         "type_info": "Bool"
       },
       {
-        "ordinal": 9,
+        "ordinal": 8,
         "name": "last_seen_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 10,
+        "ordinal": 9,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 11,
+        "ordinal": 10,
         "name": "updated_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 12,
+        "ordinal": 11,
         "name": "deleted_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        "Text"
       ]
     },
     "nullable": [
@@ -79,7 +74,6 @@
       true,
       false,
       true,
-      false,
       true,
       false,
       true,
@@ -90,5 +84,5 @@
       true
     ]
   },
-  "hash": "2caad2cf74a3126f70ff3a0235db11520387a21c02be350ad78da9ee93e8a347"
+  "hash": "6194ffec1894a66a1922b113f4a9048e69d8a07adbc2ff5b6ee0a05faacf98b8"
 }

@@ -8,7 +8,6 @@ pub struct User {
     pub username: Option<Username>,
     pub phone: PhoneNumber,
     pub email: Option<Email>,
-    pub password_hash: PasswordHash,
     pub status_text: String,
     pub two_fa_enabled: bool,
     pub two_fa_secret: Option<String>,
@@ -20,20 +19,13 @@ pub struct User {
 }
 
 impl User {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        username: Option<Username>,
-        phone: PhoneNumber,
-        email: Option<Email>,
-        password_hash: PasswordHash,
-    ) -> Self {
+    pub fn new(username: Option<Username>, phone: PhoneNumber, email: Option<Email>) -> Self {
         let now = Utc::now();
         Self {
             id: UserId::new(),
             username,
             phone,
             email,
-            password_hash,
             status_text: String::new(),
             two_fa_enabled: false,
             two_fa_secret: None,
