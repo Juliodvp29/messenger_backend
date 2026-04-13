@@ -22,3 +22,10 @@ Thumbs.db
 
 # SQLx
 sqlx-data.json
+schema.sql
+
+#Postman
+phase03_endpoints.json
+
+#Error
+*.err

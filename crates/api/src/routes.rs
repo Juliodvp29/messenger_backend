@@ -4,8 +4,8 @@ use axum::{
 };
 
 use crate::handlers::auth::{
-    delete_session, list_sessions, login, login_verify, logout, recover, recover_verify,
-    refresh, register, two_fa_setup, two_fa_setup_verify, two_fa_verify, verify_phone,
+    delete_session, list_sessions, login, login_verify, logout, recover, recover_verify, refresh,
+    register, two_fa_setup, two_fa_setup_verify, two_fa_verify, verify_phone,
 };
 use crate::middleware::auth::auth_middleware;
 use crate::services::jwt::JwtService;
