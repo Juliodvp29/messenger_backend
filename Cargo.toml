@@ -1,0 +1,64 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/api",
+    "crates/domain",
+    "crates/infrastructure",
+    "crates/shared",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace.dependencies]
+# Web
+axum = { version = "0.7", features = ["ws", "multipart"] }
+tokio = { version = "1", features = ["full"] }
+tower = { version = "0.4" }
+tower-http = { version = "0.5", features = ["cors", "trace", "compression-gzip"] }
+
+# Base de datos
+sqlx = { version = "0.7", features = ["postgres", "runtime-tokio-rustls", "macros", "uuid", "chrono", "json"] }
+
+# Redis
+redis = { version = "0.25", features = ["tokio-comp", "connection-manager", "aio"] }
+
+# Serialización
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Autenticación y seguridad
+jsonwebtoken = "9"
+argon2 = "0.5"
+totp-rs = { version = "5", features = ["qr"] }
+
+# Tipos utilitarios
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+validator = { version = "0.18", features = ["derive"] }
+
+# Errores
+thiserror = "1"
+anyhow = "1"
+
+# Logging y métricas
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# AWS S3
+aws-sdk-s3 = "1"
+aws-config = "1"
+
+# Email
+lettre = { version = "0.11", features = ["tokio1", "tokio1-native-tls"] }
+
+# Configuración
+config = "0.14"
+
+# Local Crates
+api = { path = "crates/api" }
+domain = { path = "crates/domain" }
+infrastructure = { path = "crates/infrastructure" }
+shared = { path = "crates/shared" }

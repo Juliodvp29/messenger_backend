@@ -1,0 +1,27 @@
+# Rust
+/target
+*.lock
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+#DB
+*.sql
+
+# Backend Roadmap
+backend_roadmap.md
