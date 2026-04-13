@@ -47,21 +47,15 @@ pub async fn upload_keys(
             .into_response());
     }
 
-    state
-        .key_repo
-        .upsert_keys(
-            auth.user_id,
-            &req.identity_key,
-            &domain::keys::SignedPrekey {
-                id: req.signed_prekey.id,
-                key: req.signed_prekey.key.clone(),
-                signature: req.signed_prekey.signature.clone(),
-            },
-        )
-        .await
-        .map_err(|e| ApiError(DomainError::Internal(e.to_string())))?;
-
     if !req.one_time_prekeys.is_empty() {
+        if let Err(e) = validate_one_time_prekeys(&req.one_time_prekeys) {
+            return Ok((
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": format!("invalid one_time_prekeys: {}", e)})),
+            )
+                .into_response());
+        }
+
         let prekeys: Vec<OneTimePrekey> = req
             .one_time_prekeys
             .into_iter()
@@ -361,6 +355,36 @@ fn verify_signed_prekey(
     identity_key
         .verify(spk_bytes.as_slice(), &signature)
         .map_err(|e| format!("signature verification failed: {}", e))?;
+
+    Ok(())
+}
+
+fn validate_one_time_prekeys(prekeys: &[OneTimePrekeyUpload]) -> Result<(), String> {
+    use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+
+    if prekeys.len() > 200 {
+        return Err("maximum 200 one-time prekeys allowed".to_string());
+    }
+
+    let mut seen_ids = std::collections::HashSet::new();
+
+    for prekey in prekeys {
+        if prekey.id < 0 {
+            return Err(format!("invalid prekey id: {} (must be positive)", prekey.id));
+        }
+
+        if !seen_ids.insert(prekey.id) {
+            return Err(format!("duplicate prekey id: {}", prekey.id));
+        }
+
+        let key_bytes = BASE64
+            .decode(&prekey.key)
+            .map_err(|e| format!("invalid prekey key base64: {}", e))?;
+
+        if key_bytes.len() != 32 {
+            return Err(format!("prekey {} must be 32 bytes", prekey.id));
+        }
+    }
 
     Ok(())
 }
