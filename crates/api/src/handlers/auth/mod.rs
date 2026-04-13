@@ -16,6 +16,7 @@ use domain::user::entity::User;
 use domain::user::repository::UserRepository;
 use domain::user::value_objects::{PhoneNumber, UserId};
 use infrastructure::repositories::user::PostgresUserRepository;
+use redis::AsyncCommands;
 use shared::error::DomainError;
 
 #[derive(Clone)]
@@ -623,6 +624,37 @@ pub async fn delete_session(
         StatusCode::OK,
         Json(MessageResponse {
             message: "Sesion eliminada".to_string(),
+        }),
+    )
+        .into_response())
+}
+
+pub async fn logout(
+    State(state): State<AuthState>,
+    Extension(auth): Extension<AuthenticatedUser>,
+) -> Result<Response, ApiError> {
+    state
+        .user_repo
+        .delete_session(auth.user_id, auth.session_id)
+        .await?;
+
+    let mut redis = state.otp_service.redis.clone();
+    let session_key = format!("session:{}", auth.session_id);
+    let _: () = redis
+        .del(session_key)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+    let refresh_key = format!("refresh:{}", auth.session_id);
+    let _: () = redis
+        .del(refresh_key)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+    Ok((
+        StatusCode::OK,
+        Json(MessageResponse {
+            message: "Logout exitoso".to_string(),
         }),
     )
         .into_response())

@@ -4,8 +4,8 @@ use axum::{
 };
 
 use crate::handlers::auth::{
-    delete_session, list_sessions, login, login_verify, recover, recover_verify, refresh, register,
-    two_fa_setup, two_fa_setup_verify, two_fa_verify, verify_phone,
+    delete_session, list_sessions, login, login_verify, logout, recover, recover_verify, refresh,
+    register, two_fa_setup, two_fa_setup_verify, two_fa_verify, verify_phone,
 };
 use crate::middleware::auth::auth_middleware;
 use crate::services::jwt::JwtService;
@@ -42,6 +42,7 @@ pub fn create_router(
         .route("/auth/2fa/setup/verify", post(two_fa_setup_verify))
         .route("/auth/sessions", get(list_sessions))
         .route("/auth/sessions/:session_id", delete(delete_session))
+        .route("/auth/logout", post(logout))
         .route_layer(middleware::from_fn_with_state(
             jwt_service.clone(),
             auth_middleware,
