@@ -55,11 +55,11 @@ impl OtpService {
         let key = format!("otp:register:{}", phone);
         let stored: Option<String> = con.get(&key).await?;
 
-        if let Some(stored_code) = stored {
-            if stored_code == code {
-                let _: usize = con.del(&key).await?;
-                return Ok(true);
-            }
+        if let Some(stored_code) = stored
+            && stored_code == code
+        {
+            let _: usize = con.del(&key).await?;
+            return Ok(true);
         }
         Ok(false)
     }
@@ -73,11 +73,11 @@ impl OtpService {
         let key = format!("otp:login:{}", phone);
         let stored: Option<String> = con.get(&key).await?;
 
-        if let Some(stored_code) = stored {
-            if stored_code == code {
-                let _: usize = con.del(&key).await?;
-                return Ok(true);
-            }
+        if let Some(stored_code) = stored
+            && stored_code == code
+        {
+            let _: usize = con.del(&key).await?;
+            return Ok(true);
         }
         Ok(false)
     }
@@ -91,11 +91,11 @@ impl OtpService {
         let key = format!("otp:recover:{}", phone);
         let stored: Option<String> = con.get(&key).await?;
 
-        if let Some(stored_code) = stored {
-            if stored_code == code {
-                let _: usize = con.del(&key).await?;
-                return Ok(true);
-            }
+        if let Some(stored_code) = stored
+            && stored_code == code
+        {
+            let _: usize = con.del(&key).await?;
+            return Ok(true);
         }
         Ok(false)
     }
@@ -120,11 +120,11 @@ impl OtpService {
         let key = format!("otp:2fa:setup:{}", user_id);
         let stored: Option<String> = con.get(&key).await?;
 
-        if let Some(stored_code) = stored {
-            if stored_code == code {
-                let _: usize = con.del(&key).await?;
-                return Ok(true);
-            }
+        if let Some(stored_code) = stored
+            && stored_code == code
+        {
+            let _: usize = con.del(&key).await?;
+            return Ok(true);
         }
         Ok(false)
     }
@@ -149,11 +149,11 @@ impl OtpService {
         let key = format!("otp:2fa:login:{}", user_id);
         let stored: Option<String> = con.get(&key).await?;
 
-        if let Some(stored_code) = stored {
-            if stored_code == code {
-                let _: usize = con.del(&key).await?;
-                return Ok(true);
-            }
+        if let Some(stored_code) = stored
+            && stored_code == code
+        {
+            let _: usize = con.del(&key).await?;
+            return Ok(true);
         }
         Ok(false)
     }

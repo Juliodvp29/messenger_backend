@@ -25,16 +25,14 @@ pub struct RefreshData {
 #[derive(Clone)]
 pub struct JwtService {
     secret: Vec<u8>,
-    refresh_secret: Vec<u8>,
     access_ttl: u64,
     refresh_ttl: u64,
 }
 
 impl JwtService {
-    pub fn new(secret: String, refresh_secret: String, access_ttl: u64, refresh_ttl: u64) -> Self {
+    pub fn new(secret: String, _refresh_secret: String, access_ttl: u64, refresh_ttl: u64) -> Self {
         Self {
             secret: secret.into_bytes(),
-            refresh_secret: refresh_secret.into_bytes(),
             access_ttl,
             refresh_ttl,
         }
