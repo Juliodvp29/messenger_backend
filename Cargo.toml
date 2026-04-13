@@ -56,6 +56,7 @@ lettre = { version = "0.11", features = ["tokio1", "tokio1-native-tls"] }
 
 # Configuración
 config = "0.14"
+dotenvy = "0.15"
 
 # Local Crates
 api = { path = "crates/api" }
