@@ -1,6 +1,6 @@
-use shared::error::DomainResult;
 use super::entity::User;
-use super::value_objects::{UserId, PhoneNumber, Username};
+use super::value_objects::{PhoneNumber, UserId, Username};
+use shared::error::DomainResult;
 
 pub trait UserRepository: Send + Sync {
     async fn create(&self, user: &User) -> DomainResult<()>;

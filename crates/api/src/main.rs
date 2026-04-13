@@ -19,7 +19,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Configuration loaded successfully!");
     println!("App Environment: {:?}", config.app_env);
-    println!("Server listening on {}:{}", config.server.host, config.server.port);
+    println!(
+        "Server listening on {}:{}",
+        config.server.host, config.server.port
+    );
 
     Ok(())
 }

@@ -1,6 +1,6 @@
+use super::value_objects::*;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use super::value_objects::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {

@@ -66,7 +66,11 @@ impl ContactRepository for PostgresContactRepository {
         record.map(map_record_to_contact).transpose()
     }
 
-    async fn find_by_owner_and_phone(&self, owner_id: &UserId, phone: &ContactPhoneNumber) -> DomainResult<Option<Contact>> {
+    async fn find_by_owner_and_phone(
+        &self,
+        owner_id: &UserId,
+        phone: &ContactPhoneNumber,
+    ) -> DomainResult<Option<Contact>> {
         let record = sqlx::query_as!(
             ContactRecord,
             r#"

@@ -1,2 +1,2 @@
-pub mod user;
 pub mod contact;
+pub mod user;
