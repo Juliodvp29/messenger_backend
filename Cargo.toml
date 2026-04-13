@@ -37,7 +37,7 @@ totp-rs = { version = "5", features = ["qr"] }
 # Tipos utilitarios
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
-validator = { version = "0.18", features = ["derive"] }
+validator = { version = "0.19", features = ["derive"] }
 
 # Errores
 thiserror = "1"
@@ -56,6 +56,10 @@ lettre = { version = "0.11", features = ["tokio1", "tokio1-native-tls"] }
 
 # Configuración
 config = "0.14"
+dotenvy = "0.15"
+
+# Tests
+fake = { version = "2.9", features = ["derive"] }
 
 # Local Crates
 api = { path = "crates/api" }

@@ -16,3 +16,4 @@ argon2.workspace = true
 serde.workspace = true
 uuid.workspace = true
 chrono.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

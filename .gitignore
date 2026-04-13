@@ -1,6 +1,6 @@
 # Rust
 /target
-*.lock
+Cargo.lock
 
 # IDEs
 .idea/
@@ -20,8 +20,5 @@ Thumbs.db
 # Logs
 *.log
 
-#DB
-*.sql
-
-# Backend Roadmap
-backend_roadmap.md
+# SQLx
+sqlx-data.json

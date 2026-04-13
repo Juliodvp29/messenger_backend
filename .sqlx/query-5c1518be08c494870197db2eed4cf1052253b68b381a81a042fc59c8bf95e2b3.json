@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE contacts SET \n                contact_id = $2,\n                phone = $3,\n                nickname = $4,\n                is_favorite = $5\n            WHERE id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5c1518be08c494870197db2eed4cf1052253b68b381a81a042fc59c8bf95e2b3"
+}
