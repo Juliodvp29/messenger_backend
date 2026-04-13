@@ -37,7 +37,7 @@ totp-rs = { version = "5", features = ["qr"] }
 # Tipos utilitarios
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
-validator = { version = "0.18", features = ["derive"] }
+validator = { version = "0.19", features = ["derive"] }
 
 # Errores
 thiserror = "1"
