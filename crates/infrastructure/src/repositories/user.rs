@@ -65,8 +65,9 @@ impl PostgresUserRepository {
     }
 
     pub async fn list_sessions(&self, user_id: Uuid) -> DomainResult<Vec<UserSessionRecord>> {
-        let records = sqlx::query_as::<_, (Uuid, String, String, Option<String>, Option<DateTime<Utc>>)>(
-            r#"
+        let records =
+            sqlx::query_as::<_, (Uuid, String, String, Option<String>, Option<DateTime<Utc>>)>(
+                r#"
             SELECT
                 id,
                 device_name,
@@ -77,33 +78,33 @@ impl PostgresUserRepository {
             WHERE user_id = $1
             ORDER BY last_active_at DESC
             "#,
-        )
-        .bind(user_id)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| DomainError::Internal(e.to_string()))?;
+            )
+            .bind(user_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| DomainError::Internal(e.to_string()))?;
 
         Ok(records
             .into_iter()
-            .map(|(id, device_name, device_type, ip_address, last_active_at)| UserSessionRecord {
-                id,
-                device_name,
-                device_type,
-                ip_address,
-                last_active_at,
-            })
+            .map(
+                |(id, device_name, device_type, ip_address, last_active_at)| UserSessionRecord {
+                    id,
+                    device_name,
+                    device_type,
+                    ip_address,
+                    last_active_at,
+                },
+            )
             .collect())
     }
 
     pub async fn delete_session(&self, user_id: Uuid, session_id: Uuid) -> DomainResult<bool> {
-        let result = sqlx::query(
-            "DELETE FROM user_sessions WHERE id = $1 AND user_id = $2",
-        )
-        .bind(session_id)
-        .bind(user_id)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| DomainError::Internal(e.to_string()))?;
+        let result = sqlx::query("DELETE FROM user_sessions WHERE id = $1 AND user_id = $2")
+            .bind(session_id)
+            .bind(user_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DomainError::Internal(e.to_string()))?;
 
         Ok(result.rows_affected() > 0)
     }

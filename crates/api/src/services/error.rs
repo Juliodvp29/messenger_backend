@@ -1,5 +1,5 @@
-use thiserror::Error;
 use shared::error::DomainError;
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum ServiceError {

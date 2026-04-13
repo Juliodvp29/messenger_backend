@@ -1,19 +1,18 @@
 use api::routes::create_router;
+use redis::Client;
+use redis::aio::ConnectionManager;
 use shared::config::Config;
 use sqlx::postgres::PgPoolOptions;
-use redis::aio::ConnectionManager;
-use redis::Client;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
     tracing_subscriber::fmt::init();
 
-    let config = Config::load()
-        .map_err(|e| {
-            eprintln!("Error loading configuration: {}", e);
-            std::process::exit(1);
-        })?;
+    let config = Config::load().map_err(|e| {
+        eprintln!("Error loading configuration: {}", e);
+        std::process::exit(1);
+    })?;
 
     let db_pool = PgPoolOptions::new()
         .max_connections(config.database.max_connections)
@@ -25,8 +24,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await
         .expect("No se pudo conectar a PostgreSQL");
 
-    let redis_client = Client::open(config.redis.url.clone())
-        .expect("Invalid Redis URL");
+    let redis_client = Client::open(config.redis.url.clone()).expect("Invalid Redis URL");
     let redis_manager = ConnectionManager::new(redis_client)
         .await
         .expect("No se pudo conectar a Redis");
@@ -35,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let addr = format!("{}:{}", config.server.host, config.server.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    
+
     println!("Servidor escuchando en {}", addr);
     println!("Ambiente: {:?}", config.app_env);
 

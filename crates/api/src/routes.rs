@@ -1,7 +1,6 @@
 use axum::{
-    middleware,
+    Router, middleware,
     routing::{delete, get, post},
-    Router,
 };
 
 use crate::handlers::auth::{
@@ -9,18 +8,22 @@ use crate::handlers::auth::{
     two_fa_setup, two_fa_setup_verify, two_fa_verify, verify_phone,
 };
 use crate::middleware::auth::auth_middleware;
-use crate::services::otp::OtpService;
 use crate::services::jwt::JwtService;
+use crate::services::otp::OtpService;
 use infrastructure::repositories::user::PostgresUserRepository;
-use shared::config::Config;
 use redis::aio::ConnectionManager;
+use shared::config::Config;
 use std::sync::Arc;
 
-pub fn create_router(config: &Config, db_pool: sqlx::PgPool, redis_manager: ConnectionManager) -> Router {
+pub fn create_router(
+    config: &Config,
+    db_pool: sqlx::PgPool,
+    redis_manager: ConnectionManager,
+) -> Router {
     let user_repo = Arc::new(PostgresUserRepository::new(db_pool.clone()));
-    
+
     let otp_service = Arc::new(OtpService::new(redis_manager.clone(), 600));
-    
+
     let jwt_service = Arc::new(JwtService::new(
         config.jwt.secret.clone(),
         config.jwt.refresh_secret.clone(),

@@ -1,10 +1,10 @@
 use axum::{
-    extract::State,
+    Json,
     extract::Request,
-    http::{header::AUTHORIZATION, StatusCode},
+    extract::State,
+    http::{StatusCode, header::AUTHORIZATION},
     middleware::Next,
     response::{IntoResponse, Response},
-    Json,
 };
 use std::sync::Arc;
 use uuid::Uuid;
@@ -22,7 +22,8 @@ pub async fn auth_middleware(
     mut req: Request,
     next: Next,
 ) -> Response {
-    let auth_header = req.headers()
+    let auth_header = req
+        .headers()
         .get(AUTHORIZATION)
         .and_then(|v| v.to_str().ok());
 
@@ -48,8 +49,10 @@ pub async fn auth_middleware(
         Err(_) => return unauthorized_response("Malformed token session"),
     };
 
-    req.extensions_mut()
-        .insert(AuthenticatedUser { user_id, session_id });
+    req.extensions_mut().insert(AuthenticatedUser {
+        user_id,
+        session_id,
+    });
 
     next.run(req).await
 }
