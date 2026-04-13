@@ -1,0 +1,587 @@
+use axum::{
+    extract::{Extension, Path, State},
+    response::{IntoResponse, Response},
+    Json,
+};
+use axum::http::StatusCode;
+use std::sync::Arc;
+use chrono::{Duration, Utc};
+use uuid::Uuid;
+
+use crate::middleware::auth::AuthenticatedUser;
+use crate::services::otp::OtpService;
+use crate::services::jwt::{JwtService, RefreshData};
+use crate::error::ApiError;
+use domain::user::repository::UserRepository;
+use domain::user::value_objects::{PhoneNumber, UserId};
+use domain::user::entity::User;
+use infrastructure::repositories::user::PostgresUserRepository;
+use shared::error::DomainError;
+
+#[derive(Clone)]
+pub struct AuthState {
+    pub user_repo: Arc<PostgresUserRepository>,
+    pub otp_service: Arc<OtpService>,
+    pub jwt_service: Arc<JwtService>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct RegisterRequest {
+    pub phone: String,
+    pub device_id: String,
+    pub device_name: String,
+    pub device_type: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct VerifyPhoneRequest {
+    pub phone: String,
+    pub code: String,
+    pub device_id: Option<String>,
+    pub device_name: Option<String>,
+    pub device_type: Option<String>,
+    pub push_token: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct LoginRequest {
+    pub phone: String,
+    pub device_id: String,
+    pub device_name: String,
+    pub device_type: String,
+    pub push_token: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct LoginVerifyRequest {
+    pub phone: String,
+    pub code: String,
+    pub device_id: Option<String>,
+    pub device_name: Option<String>,
+    pub device_type: Option<String>,
+    pub push_token: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct RefreshRequest {
+    pub refresh_token: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct RecoverRequest {
+    pub phone: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct RecoverVerifyRequest {
+    pub phone: String,
+    pub code: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct TwoFactorSetupRequest {
+    pub code: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct TwoFactorChallengeRequest {
+    pub temp_token: String,
+    pub code: String,
+    pub device_id: Option<String>,
+    pub device_name: Option<String>,
+    pub device_type: Option<String>,
+    pub push_token: Option<String>,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct AuthResponse {
+    pub access_token: String,
+    pub refresh_token: String,
+    pub expires_in: u64,
+    pub user: UserResponse,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct UserResponse {
+    pub id: String,
+    pub phone: String,
+    pub username: Option<String>,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct MessageResponse {
+    pub message: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct SessionResponse {
+    pub id: String,
+    pub device_name: String,
+    pub device_type: String,
+    pub ip_address: Option<String>,
+    pub last_active_at: Option<String>,
+    pub is_current: bool,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct SessionsListResponse {
+    pub sessions: Vec<SessionResponse>,
+}
+
+#[derive(Debug, Clone)]
+struct DeviceContext {
+    device_id: String,
+    device_name: String,
+    device_type: String,
+    push_token: Option<String>,
+}
+
+impl DeviceContext {
+    fn from_parts(
+        device_id: Option<String>,
+        device_name: Option<String>,
+        device_type: Option<String>,
+        push_token: Option<String>,
+    ) -> Self {
+        Self {
+            device_id: device_id.unwrap_or_else(|| Uuid::new_v4().to_string()),
+            device_name: device_name.unwrap_or_else(|| "unknown device".to_string()),
+            device_type: device_type.unwrap_or_else(|| "web".to_string()),
+            push_token,
+        }
+    }
+}
+
+async fn issue_tokens(
+    state: &AuthState,
+    user: &User,
+    device: DeviceContext,
+) -> Result<AuthResponse, ApiError> {
+    let expires_at = Utc::now() + Duration::seconds(state.jwt_service.refresh_token_ttl() as i64);
+    let session_id = state
+        .user_repo
+        .upsert_session(
+            user.id.0,
+            &device.device_id,
+            &device.device_name,
+            &device.device_type,
+            device.push_token.as_deref(),
+            expires_at,
+        )
+        .await?;
+
+    let access_token = state
+        .jwt_service
+        .generate_access_token(&user.id.0, &session_id)?;
+
+    let refresh_data = RefreshData {
+        sub: user.id.0.to_string(),
+        sid: session_id.to_string(),
+        device_id: device.device_id,
+        device_name: device.device_name,
+        device_type: device.device_type,
+        push_token: device.push_token,
+    };
+    let refresh_token = state.jwt_service.generate_refresh_token(&refresh_data)?;
+
+    Ok(AuthResponse {
+        access_token,
+        refresh_token,
+        expires_in: state.jwt_service.access_token_ttl(),
+        user: UserResponse {
+            id: user.id.0.to_string(),
+            phone: user.phone.as_str().to_string(),
+            username: user.username.as_ref().map(|u| u.as_str().to_string()),
+        },
+    })
+}
+
+pub async fn register(
+    State(state): State<AuthState>,
+    Json(req): Json<RegisterRequest>,
+) -> Result<Response, ApiError> {
+    let phone = PhoneNumber::new(req.phone.clone())
+        .map_err(|e| DomainError::Validation(e.to_string()))?;
+
+    let rate_key = format!("register:{}", req.device_id);
+    let allowed = state.otp_service.check_rate_limit(&rate_key, 5, 3600).await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+    
+    if !allowed {
+        return Ok((
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(MessageResponse { message: "Too many requests".to_string() })
+        ).into_response());
+    }
+
+    let existing = state.user_repo.find_by_phone(&phone).await?;
+    if existing.is_some() {
+        return Ok((
+            StatusCode::ACCEPTED,
+            Json(MessageResponse { message: "Código enviado".to_string() })
+        ).into_response());
+    }
+
+    let code = OtpService::generate();
+    state.otp_service.store_register_otp(phone.as_str(), &code).await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(MessageResponse { message: "Código enviado".to_string() })
+    ).into_response())
+}
+
+pub async fn verify_phone(
+    State(state): State<AuthState>,
+    Json(req): Json<VerifyPhoneRequest>,
+) -> Result<Response, ApiError> {
+    let valid = state.otp_service.verify_register_otp(&req.phone, &req.code).await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+    
+    if !valid {
+        return Ok((
+            StatusCode::BAD_REQUEST,
+            Json(MessageResponse { message: "Código inválido".to_string() })
+        ).into_response());
+    }
+
+    let phone = PhoneNumber::new(req.phone.clone())
+        .map_err(|e| DomainError::Validation(e.to_string()))?;
+
+    let user = User::new(None, phone, None);
+    state.user_repo.create(&user).await?;
+
+    let device = DeviceContext::from_parts(
+        req.device_id,
+        req.device_name,
+        req.device_type,
+        req.push_token,
+    );
+    let auth_response = issue_tokens(&state, &user, device).await?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(auth_response)
+    ).into_response())
+}
+
+pub async fn login(
+    State(state): State<AuthState>,
+    Json(req): Json<LoginRequest>,
+) -> Result<Response, ApiError> {
+    let phone = PhoneNumber::new(req.phone.clone())
+        .map_err(|e| DomainError::Validation(e.to_string()))?;
+
+    let _user = state.user_repo.find_by_phone(&phone).await?
+        .ok_or_else(|| DomainError::Unauthorized("Credenciales inválidas".to_string()))?;
+
+    let rate_key = format!("login:{}", req.device_id);
+    let allowed = state.otp_service.check_rate_limit(&rate_key, 10, 3600).await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+    
+    if !allowed {
+        return Ok((
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(MessageResponse { message: "Too many requests".to_string() })
+        ).into_response());
+    }
+
+    let code = OtpService::generate();
+    state.otp_service.store_login_otp(phone.as_str(), &code).await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(MessageResponse { message: "Código enviado".to_string() })
+    ).into_response())
+}
+
+pub async fn login_verify(
+    State(state): State<AuthState>,
+    Json(req): Json<LoginVerifyRequest>,
+) -> Result<Response, ApiError> {
+    let valid = state.otp_service.verify_login_otp(&req.phone, &req.code).await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+    
+    if !valid {
+        return Ok((
+            StatusCode::BAD_REQUEST,
+            Json(MessageResponse { message: "Código inválido".to_string() })
+        ).into_response());
+    }
+
+    let phone = PhoneNumber::new(req.phone.clone())
+        .map_err(|e| DomainError::Validation(e.to_string()))?;
+    
+    let user = state.user_repo.find_by_phone(&phone).await?
+        .ok_or_else(|| DomainError::Unauthorized("Usuario no encontrado".to_string()))?;
+
+    if user.two_fa_enabled {
+        let two_fa_code = OtpService::generate();
+        state
+            .otp_service
+            .store_two_fa_login_otp(&user.id.0.to_string(), &two_fa_code)
+            .await
+            .map_err(|e| DomainError::Internal(e.to_string()))?;
+        let temp_token = state.jwt_service.generate_temp_token(&user.id.0)?;
+        return Ok((
+            StatusCode::ACCEPTED,
+            Json(serde_json::json!({
+                "two_fa_required": true,
+                "temp_token": temp_token,
+                "code": two_fa_code
+            }))
+        ).into_response());
+    }
+
+    let device = DeviceContext::from_parts(
+        req.device_id,
+        req.device_name,
+        req.device_type,
+        req.push_token,
+    );
+    let auth_response = issue_tokens(&state, &user, device).await?;
+
+    Ok((
+        StatusCode::OK,
+        Json(auth_response)
+    ).into_response())
+}
+
+pub async fn refresh(
+    State(state): State<AuthState>,
+    Json(req): Json<RefreshRequest>,
+) -> Result<Response, ApiError> {
+    let refresh_data = state.jwt_service.validate_refresh_token(&req.refresh_token)
+        .map_err(|e| DomainError::Unauthorized(e.to_string()))?;
+
+    let user_id = Uuid::parse_str(&refresh_data.sub)
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+    let user = state
+        .user_repo
+        .find_by_id(&UserId(user_id))
+        .await?
+        .ok_or_else(|| DomainError::Unauthorized("Usuario no encontrado".to_string()))?;
+    let device = DeviceContext::from_parts(
+        Some(refresh_data.device_id),
+        Some(refresh_data.device_name),
+        Some(refresh_data.device_type),
+        refresh_data.push_token,
+    );
+    let auth_response = issue_tokens(&state, &user, device).await?;
+
+    Ok((
+        StatusCode::OK,
+        Json(auth_response)
+    ).into_response())
+}
+
+pub async fn recover(
+    State(state): State<AuthState>,
+    Json(req): Json<RecoverRequest>,
+) -> Result<Response, ApiError> {
+    let phone = PhoneNumber::new(req.phone.clone())
+        .map_err(|e| DomainError::Validation(e.to_string()))?;
+    if state.user_repo.find_by_phone(&phone).await?.is_some() {
+        let code = OtpService::generate();
+        state
+            .otp_service
+            .store_recover_otp(phone.as_str(), &code)
+            .await
+            .map_err(|e| DomainError::Internal(e.to_string()))?;
+    }
+
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(MessageResponse {
+            message: "Si la cuenta existe, enviamos un codigo de recuperacion".to_string(),
+        }),
+    )
+        .into_response())
+}
+
+pub async fn recover_verify(
+    State(state): State<AuthState>,
+    Json(req): Json<RecoverVerifyRequest>,
+) -> Result<Response, ApiError> {
+    let valid = state
+        .otp_service
+        .verify_recover_otp(&req.phone, &req.code)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+    if !valid {
+        return Ok((
+            StatusCode::BAD_REQUEST,
+            Json(MessageResponse {
+                message: "Codigo invalido".to_string(),
+            }),
+        )
+            .into_response());
+    }
+
+    let phone = PhoneNumber::new(req.phone.clone())
+        .map_err(|e| DomainError::Validation(e.to_string()))?;
+    let user = state
+        .user_repo
+        .find_by_phone(&phone)
+        .await?
+        .ok_or_else(|| DomainError::Unauthorized("Usuario no encontrado".to_string()))?;
+    let recover_token = state.jwt_service.generate_temp_token(&user.id.0)?;
+
+    Ok((
+        StatusCode::OK,
+        Json(serde_json::json!({ "recover_token": recover_token })),
+    )
+        .into_response())
+}
+
+pub async fn two_fa_setup(
+    State(state): State<AuthState>,
+    Extension(auth): Extension<AuthenticatedUser>,
+) -> Result<Response, ApiError> {
+    let code = OtpService::generate();
+    state
+        .otp_service
+        .store_two_fa_setup_otp(&auth.user_id.to_string(), &code)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+    Ok((
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "message": "2FA setup code generated",
+            "code": code
+        })),
+    )
+        .into_response())
+}
+
+pub async fn two_fa_setup_verify(
+    State(state): State<AuthState>,
+    Extension(auth): Extension<AuthenticatedUser>,
+    Json(req): Json<TwoFactorSetupRequest>,
+) -> Result<Response, ApiError> {
+    let valid = state
+        .otp_service
+        .verify_two_fa_setup_otp(&auth.user_id.to_string(), &req.code)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+    if !valid {
+        return Ok((
+            StatusCode::BAD_REQUEST,
+            Json(MessageResponse {
+                message: "Codigo de configuracion invalido".to_string(),
+            }),
+        )
+            .into_response());
+    }
+
+    let mut user = state
+        .user_repo
+        .find_by_id(&UserId(auth.user_id))
+        .await?
+        .ok_or_else(|| DomainError::NotFound("Usuario no encontrado".to_string()))?;
+    user.two_fa_enabled = true;
+    state.user_repo.update(&user).await?;
+
+    Ok((
+        StatusCode::OK,
+        Json(MessageResponse {
+            message: "2FA habilitado".to_string(),
+        }),
+    )
+        .into_response())
+}
+
+pub async fn two_fa_verify(
+    State(state): State<AuthState>,
+    Json(req): Json<TwoFactorChallengeRequest>,
+) -> Result<Response, ApiError> {
+    let claims = state
+        .jwt_service
+        .validate_access_token(&req.temp_token)
+        .map_err(|e| DomainError::Unauthorized(e.to_string()))?;
+    if claims.sid != "temp" {
+        return Err(DomainError::Unauthorized("Token temporal invalido".to_string()).into());
+    }
+
+    let user_id = Uuid::parse_str(&claims.sub)
+        .map_err(|e| DomainError::Unauthorized(e.to_string()))?;
+    let valid = state
+        .otp_service
+        .verify_two_fa_login_otp(&user_id.to_string(), &req.code)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+    if !valid {
+        return Ok((
+            StatusCode::BAD_REQUEST,
+            Json(MessageResponse {
+                message: "Codigo 2FA invalido".to_string(),
+            }),
+        )
+            .into_response());
+    }
+
+    let user = state
+        .user_repo
+        .find_by_id(&UserId(user_id))
+        .await?
+        .ok_or_else(|| DomainError::Unauthorized("Usuario no encontrado".to_string()))?;
+    let device = DeviceContext::from_parts(
+        req.device_id,
+        req.device_name,
+        req.device_type,
+        req.push_token,
+    );
+    let auth_response = issue_tokens(&state, &user, device).await?;
+
+    Ok((StatusCode::OK, Json(auth_response)).into_response())
+}
+
+pub async fn list_sessions(
+    State(state): State<AuthState>,
+    Extension(auth): Extension<AuthenticatedUser>,
+) -> Result<Response, ApiError> {
+    let sessions = state.user_repo.list_sessions(auth.user_id).await?;
+    let response = SessionsListResponse {
+        sessions: sessions
+            .into_iter()
+            .map(|s| SessionResponse {
+                id: s.id.to_string(),
+                device_name: s.device_name,
+                device_type: s.device_type,
+                ip_address: s.ip_address,
+                last_active_at: s.last_active_at.map(|ts| ts.to_rfc3339()),
+                is_current: s.id == auth.session_id,
+            })
+            .collect(),
+    };
+
+    Ok((StatusCode::OK, Json(response)).into_response())
+}
+
+pub async fn delete_session(
+    State(state): State<AuthState>,
+    Extension(auth): Extension<AuthenticatedUser>,
+    Path(session_id): Path<Uuid>,
+) -> Result<Response, ApiError> {
+    let deleted = state.user_repo.delete_session(auth.user_id, session_id).await?;
+    if !deleted {
+        return Ok((
+            StatusCode::NOT_FOUND,
+            Json(MessageResponse {
+                message: "Sesion no encontrada".to_string(),
+            }),
+        )
+            .into_response());
+    }
+
+    Ok((
+        StatusCode::OK,
+        Json(MessageResponse {
+            message: "Sesion eliminada".to_string(),
+        }),
+    )
+        .into_response())
+}

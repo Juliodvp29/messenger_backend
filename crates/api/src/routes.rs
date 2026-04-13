@@ -1,0 +1,63 @@
+use axum::{
+    middleware,
+    routing::{delete, get, post},
+    Router,
+};
+
+use crate::handlers::auth::{
+    delete_session, list_sessions, login, login_verify, recover, recover_verify, refresh, register,
+    two_fa_setup, two_fa_setup_verify, two_fa_verify, verify_phone,
+};
+use crate::middleware::auth::auth_middleware;
+use crate::services::otp::OtpService;
+use crate::services::jwt::JwtService;
+use infrastructure::repositories::user::PostgresUserRepository;
+use shared::config::Config;
+use redis::aio::ConnectionManager;
+use std::sync::Arc;
+
+pub fn create_router(config: &Config, db_pool: sqlx::PgPool, redis_manager: ConnectionManager) -> Router {
+    let user_repo = Arc::new(PostgresUserRepository::new(db_pool.clone()));
+    
+    let otp_service = Arc::new(OtpService::new(redis_manager.clone(), 600));
+    
+    let jwt_service = Arc::new(JwtService::new(
+        config.jwt.secret.clone(),
+        config.jwt.refresh_secret.clone(),
+        config.jwt.access_ttl_seconds,
+        config.jwt.refresh_ttl_seconds,
+    ));
+
+    let auth_state = crate::handlers::auth::AuthState {
+        user_repo,
+        otp_service,
+        jwt_service: jwt_service.clone(),
+    };
+
+    let protected_auth_routes = Router::new()
+        .route("/auth/2fa/setup", post(two_fa_setup))
+        .route("/auth/2fa/setup/verify", post(two_fa_setup_verify))
+        .route("/auth/sessions", get(list_sessions))
+        .route("/auth/sessions/:session_id", delete(delete_session))
+        .route_layer(middleware::from_fn_with_state(
+            jwt_service.clone(),
+            auth_middleware,
+        ));
+
+    Router::new()
+        .route("/health", get(health))
+        .route("/auth/register", post(register))
+        .route("/auth/verify-phone", post(verify_phone))
+        .route("/auth/login", post(login))
+        .route("/auth/login/verify", post(login_verify))
+        .route("/auth/recover", post(recover))
+        .route("/auth/recover/verify", post(recover_verify))
+        .route("/auth/2fa/verify", post(two_fa_verify))
+        .route("/auth/refresh", post(refresh))
+        .merge(protected_auth_routes)
+        .with_state(auth_state)
+}
+
+async fn health() -> &'static str {
+    "OK"
+}

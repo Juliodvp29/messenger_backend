@@ -10,9 +10,102 @@ pub struct PostgresUserRepository {
     pool: PgPool,
 }
 
+#[derive(Debug, Clone)]
+pub struct UserSessionRecord {
+    pub id: Uuid,
+    pub device_name: String,
+    pub device_type: String,
+    pub ip_address: Option<String>,
+    pub last_active_at: Option<DateTime<Utc>>,
+}
+
 impl PostgresUserRepository {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
+    }
+
+    pub async fn upsert_session(
+        &self,
+        user_id: Uuid,
+        device_id: &str,
+        device_name: &str,
+        device_type: &str,
+        push_token: Option<&str>,
+        expires_at: DateTime<Utc>,
+    ) -> DomainResult<Uuid> {
+        let session_id = Uuid::new_v4();
+
+        let record = sqlx::query_as::<_, (Uuid,)>(
+            r#"
+            INSERT INTO user_sessions (id, user_id, device_id, device_name, device_type, push_token, expires_at)
+            VALUES ($1, $2, $3, $4, $5::device_type, $6, $7)
+            ON CONFLICT (user_id, device_id) DO UPDATE
+            SET
+                id = EXCLUDED.id,
+                device_name = EXCLUDED.device_name,
+                device_type = EXCLUDED.device_type,
+                push_token = EXCLUDED.push_token,
+                expires_at = EXCLUDED.expires_at,
+                last_active_at = NOW()
+            RETURNING id
+            "#,
+        )
+        .bind(session_id)
+        .bind(user_id)
+        .bind(device_id)
+        .bind(device_name)
+        .bind(device_type)
+        .bind(push_token)
+        .bind(expires_at)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        Ok(record.0)
+    }
+
+    pub async fn list_sessions(&self, user_id: Uuid) -> DomainResult<Vec<UserSessionRecord>> {
+        let records = sqlx::query_as::<_, (Uuid, String, String, Option<String>, Option<DateTime<Utc>>)>(
+            r#"
+            SELECT
+                id,
+                device_name,
+                device_type::text,
+                ip_address::text,
+                last_active_at
+            FROM user_sessions
+            WHERE user_id = $1
+            ORDER BY last_active_at DESC
+            "#,
+        )
+        .bind(user_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        Ok(records
+            .into_iter()
+            .map(|(id, device_name, device_type, ip_address, last_active_at)| UserSessionRecord {
+                id,
+                device_name,
+                device_type,
+                ip_address,
+                last_active_at,
+            })
+            .collect())
+    }
+
+    pub async fn delete_session(&self, user_id: Uuid, session_id: Uuid) -> DomainResult<bool> {
+        let result = sqlx::query(
+            "DELETE FROM user_sessions WHERE id = $1 AND user_id = $2",
+        )
+        .bind(session_id)
+        .bind(user_id)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        Ok(result.rows_affected() > 0)
     }
 }
 
