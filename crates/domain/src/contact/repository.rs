@@ -2,7 +2,7 @@ use super::super::user::value_objects::UserId;
 use super::entity::Contact;
 use super::value_objects::{ContactId, ContactPhoneNumber};
 use shared::error::DomainResult;
-
+#[allow(async_fn_in_trait)]
 pub trait ContactRepository: Send + Sync {
     async fn create(&self, contact: &Contact) -> DomainResult<()>;
     async fn find_by_id(&self, id: &ContactId) -> DomainResult<Option<Contact>>;

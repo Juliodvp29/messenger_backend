@@ -32,6 +32,7 @@ impl Email {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn new_unchecked(value: String) -> Self {
         Self(value)
     }
@@ -60,6 +61,7 @@ impl PhoneNumber {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn new_unchecked(value: String) -> Self {
         Self(value)
     }
@@ -87,6 +89,7 @@ impl Username {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn new_unchecked(value: String) -> Self {
         Self(value)
     }
