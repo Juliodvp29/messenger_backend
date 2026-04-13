@@ -65,7 +65,7 @@ CREATE TABLE users (
                        username          TEXT        UNIQUE,                         -- @handle único, opcional
                        phone             TEXT        UNIQUE NOT NULL,                -- número E.164: +573001234567
                        email             TEXT        UNIQUE,
-                       password_hash     TEXT        NOT NULL,                       -- bcrypt/argon2id
+                       -- password_hash eliminado (Fase 03: OTP + PIN local)
                        avatar_url        TEXT,
                        status_text       TEXT        DEFAULT '',                     -- "en reunión", "disponible"
                        two_fa_enabled    BOOLEAN     NOT NULL DEFAULT FALSE,

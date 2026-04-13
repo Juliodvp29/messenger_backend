@@ -31,13 +31,14 @@ serde_json = "1"
 
 # Autenticación y seguridad
 jsonwebtoken = "9"
-argon2 = "0.5"
+# argon2 removed (Fase 03: OTP + PIN local instead of password)
 totp-rs = { version = "5", features = ["qr"] }
 
 # Tipos utilitarios
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 validator = { version = "0.19", features = ["derive"] }
+rand = "0.8"
 
 # Errores
 thiserror = "1"

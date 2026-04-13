@@ -1,0 +1,36 @@
+---
+description: Core Rust backend standards for architecture, SQL, security, and realtime behavior in this workspace.
+alwaysApply: true
+---
+
+# Backend Standards
+
+## Architecture
+- Use `Axum` for HTTP routing and `Tokio` for async runtime.
+- Keep separation of concerns: handlers (HTTP), services/use-cases (business logic), repositories (data access).
+- Do not place SQL or infrastructure details in handlers.
+- Prefer trait-based repository contracts to isolate persistence details.
+
+## Error Handling
+- Use centralized `AppError` with `thiserror`.
+- Map infrastructure errors into domain-safe errors before HTTP mapping.
+- Never expose internal error details, stack traces, secrets, or raw SQL errors to clients.
+
+## SQL and Data Access
+- Prefer `sqlx::query!` and `sqlx::query_as!` for compile-time validation.
+- Always use parameterized queries; never interpolate raw user input.
+- Avoid `SELECT *`; select explicit columns.
+- Suggest or add indexes for frequent filters/sorts (`created_at`, `sender_id`, and similar keys).
+
+## Security
+- Use strong credential hashing with `argon2` where password-based auth exists.
+- JWT must use asymmetric signing (`EdDSA` or `RS256`) and include a key rotation strategy.
+- Enforce authorization per resource (owner/member/admin checks), not only authentication.
+- Review endpoints for ID enumeration risk and apply mitigations.
+- Apply rate limiting on abuse-prone endpoints (login, OTP, critical write routes).
+
+## Realtime and WebSockets
+- Use `tokio::sync::broadcast` for group chat fan-out when appropriate.
+- Handle clean disconnects with task cancellation and subscription cleanup.
+- Include heartbeat and timeout logic to detect dead connections.
+- Account for backpressure and dropped messages with retry/resync strategy.

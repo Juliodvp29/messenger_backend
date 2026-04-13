@@ -775,6 +775,7 @@ endpoints:
   - POST   /auth/register
   - POST   /auth/verify-phone
   - POST   /auth/login
+  - POST   /auth/login/verify    ← verificar OTP de login
   - POST   /auth/refresh
   - POST   /auth/logout
   - POST   /auth/2fa/setup
@@ -784,21 +785,18 @@ endpoints:
   - GET    /auth/sessions
   - DELETE /auth/sessions/:id
   - DELETE /auth/sessions
-  - POST   /auth/forgot-password
-  - POST   /auth/reset-password
 ```
 
-### 3.1 — Registro de usuario
+### 3.1 — Registro de usuario (OTP + PIN local)
 
 **Flujo:**
 
-1. Cliente envía `{ phone, password, device_info }`
+1. Cliente envía `{ phone, device_info }` — sin contraseña
 2. Validar formato E.164 del teléfono (misma lógica que el trigger de DB)
 3. Verificar que el teléfono no está registrado (responder igual si está o no — no revelar)
-4. Hash de contraseña con Argon2id
-5. Generar OTP de 6 dígitos, guardarlo en Redis: `SETEX otp:register:{phone} 600 {code}`
-6. Enviar OTP por SMS
-7. Retornar `202 Accepted` con `{ message: "Código enviado" }`
+4. Generar OTP de 6 dígitos, guardarlo en Redis: `SETEX otp:register:{phone} 600 {code}`
+5. Enviar OTP por SMS
+6. Retornar `202 Accepted` con `{ message: "Código enviado" }`
 
 **Rate limiting en este endpoint:**
 
@@ -808,40 +806,46 @@ límite: 5 intentos por hora por IP
 acción si se excede: 429 Too Many Requests con Retry-After header
 ```
 
-**Parámetros Argon2id:**
-
-```rust
-Argon2::new(Algorithm::Argon2id, Version::V0x13, Params::new(
-    65536,  // m_cost: 64 MB de memoria
-    3,      // t_cost: 3 iteraciones
-    4,      // p_cost: 4 hilos paralelos
-    None,
-).unwrap())
-```
-
 **Al verificar el OTP (POST /auth/verify-phone):**
 
 1. Obtener OTP de Redis, verificar que coincide
 2. `DEL otp:register:{phone}` — uso único
-3. Insertar usuario en DB (dentro de transacción)
+3. Insertar usuario en DB (dentro de transacción) — **sin password_hash** (columna puede ser NULL o eliminarse)
 4. Insertar user_profile con defaults de privacidad
 5. Insertar user_keys placeholder (campos vacíos — cliente subirá claves en Fase 4)
 6. Emitir tokens JWT y crear sesión
 7. Retornar `201 Created` con tokens y perfil básico
 
-**Criterio de completitud:** Un usuario nuevo puede registrarse y obtener tokens. El número incorrecto en verify-phone retorna 400 sin revelar si el número existe.
+**PIN local (del lado del cliente, nunca llega al servidor):**
+
+```
+- El usuario crea un PIN de 4-6 dígitos en su dispositivo después del registro
+- El PIN se usa para cifrar las claves privadas locales (identity key, prekeys)
+- El PIN NUNCA se envía al servidor — es solo protección local
+- Si el usuario cambia de dispositivo: número → OTP → nuevo PIN local
+- Esto protege contra SIM swapping porque las claves cifradas no están en el servidor
+```
+
+**Criterio de completitud:** Un usuario nuevo puede registrarse con solo teléfono y obtener tokens. El número incorrecto en verify-phone retorna 400 sin revelar si el número existe.
 
 ---
 
-### 3.2 — Login y emisión de tokens
+### 3.2 — Login y emisión de tokens (OTP only)
 
 **Flujo:**
 
-1. Cliente envía `{ phone, password, device_id, device_name, device_type, push_token? }`
-2. Buscar usuario por teléfono — si no existe: 401 genérico (mismo mensaje que contraseña incorrecta)
-3. Verificar contraseña con `argon2::verify_password`
-4. Si `two_fa_enabled = true`: retornar `202` con `{ two_fa_required: true, temp_token: JWT_corto }` — no emitir access/refresh tokens todavía
-5. Si 2FA no requerido o ya verificado: emitir tokens
+1. Cliente envía `{ phone, device_id, device_name, device_type, push_token? }` — sin contraseña
+2. Buscar usuario por teléfono — si no existe: 401 genérico
+3. Generar OTP de 6 dígitos, guardarlo en Redis: `SETEX otp:login:{phone} 300 {code}`
+4. Enviar OTP por SMS
+5. Retornar `202 Accepted` con `{ message: "Código enviado" }`
+
+**Al verificar el OTP (POST /auth/login/verify):**
+
+1. Obtener OTP de Redis, verificar que coincide
+2. `DEL otp:login:{phone}` — uso único
+3. Si `two_fa_enabled = true`: retornar `202` con `{ two_fa_required: true, temp_token: JWT_corto }` — no emitir access/refresh tokens todavía
+4. Si 2FA no requerido o ya verificado: emitir tokens
 
 **Estructura de los tokens:**
 
@@ -976,30 +980,29 @@ DELETE /auth/sessions (revocar todas excepto la actual)
 
 ---
 
-### 3.6 — Recuperación de contraseña
+### 3.6 — Recuperación de cuenta (OTP only)
 
 ```
-POST /auth/forgot-password
+POST /auth/recover
   Body: { phone }
   → SIEMPRE retornar 200 (no revelar si el número existe)
   → Si el número existe: generar OTP 6 dígitos
-  → SETEX otp:reset:{phone} 900 {code}  ← 15 minutos
+  → SETEX otp:recover:{phone} 900 {code}  ← 15 minutos
   → Enviar OTP por SMS
   → Rate limit: 3 intentos por número por hora
 
-POST /auth/reset-password
-  Body: { phone, code, new_password }
-  → GET otp:reset:{phone} de Redis
+POST /auth/recover/verify
+  Body: { phone, code }
+  → GET otp:recover:{phone} de Redis
   → Verificar que el código coincide
-  → DEL otp:reset:{phone} — uso único
-  → Hash nueva contraseña con Argon2id
-  → UPDATE users SET password_hash = $1 WHERE phone = $2
-  → DELETE FROM user_sessions WHERE user_id = (SELECT id FROM users WHERE phone = $2)
-  → Limpiar todas las sesiones de Redis del usuario
-  → Registrar password_change en audit_log con ip_address
+  → DEL otp:recover:{phone} — uso único
+  → Emitir tokens JWT y crear nueva sesión
+  → DELETE FROM user_sessions WHERE user_id = (SELECT id FROM users WHERE phone = $2) AND id != current_session
+  → El usuario debe configurar nuevo PIN local en el dispositivo (el servidor no tiene PIN)
+  → Registrar account_recovery en audit_log con ip_address
 ```
 
-**Criterio de completitud:** Después de reset exitoso, el login con la contraseña anterior retorna 401. El token OTP de reset no puede reutilizarse.
+**Criterio de completitud:** Después de recuperación exitosa, el usuario obtiene tokens. Solo puede tener una sesión activa (la nueva).
 
 ---
 

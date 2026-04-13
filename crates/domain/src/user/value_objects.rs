@@ -99,21 +99,6 @@ impl Username {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PasswordHash(pub String);
-
-impl PasswordHash {
-    pub fn new(value: String) -> DomainResult<Self> {
-        if !value.is_empty() {
-            Ok(Self(value))
-        } else {
-            Err(DomainError::Validation(
-                "Password hash cannot be empty".to_string(),
-            ))
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

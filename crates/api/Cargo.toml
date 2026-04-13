@@ -21,3 +21,7 @@ totp-rs.workspace = true
 uuid.workspace = true
 chrono.workspace = true
 dotenvy.workspace = true
+redis.workspace = true
+thiserror.workspace = true
+rand.workspace = true
+sqlx.workspace = true
