@@ -1,4 +1,4 @@
-use domain::user::value_objects::{PhoneNumber, UserId};
+use domain::user::value_objects::{PhoneNumber, UserId, Username};
 use domain::user::entity::User;
 use crate::repositories::user::PostgresUserRepository;
 use sqlx::PgPool;
@@ -10,9 +10,9 @@ async fn test_create_user(pool: PgPool) -> sqlx::Result<()> {
     let phone = PhoneNumber::new("+573001111111".to_string()).unwrap();
 
     let user = User::new(
-        Some(domain::user::value_objects::Username("testuser_create".to_string()).unwrap()),
+        Some(Username::new("testuser_create".to_string()).unwrap()),
         phone.clone(),
-        Some(domain::user::value_objects::Email("test@example.com".to_string()).unwrap()),
+        Some(domain::user::value_objects::Email::new("test@example.com".to_string()).unwrap()),
     );
 
     repo.create(&user).await.expect("Should create user");
@@ -30,7 +30,7 @@ async fn test_find_by_phone(pool: PgPool) -> sqlx::Result<()> {
     let phone = PhoneNumber::new("+573001222222".to_string()).unwrap();
 
     let user = User::new(
-        Some(domain::user::value_objects::Username("testuser_phone".to_string()).unwrap()),
+        Some(Username::new("testuser_phone".to_string()).unwrap()),
         phone.clone(),
         None,
     );
@@ -50,7 +50,7 @@ async fn test_update_user(pool: PgPool) -> sqlx::Result<()> {
     let phone = PhoneNumber::new("+573001333333".to_string()).unwrap();
 
     let user = User::new(
-        Some(domain::user::value_objects::Username("testuser_update".to_string()).unwrap()),
+        Some(Username::new("testuser_update".to_string()).unwrap()),
         phone.clone(),
         None,
     );
@@ -73,7 +73,7 @@ async fn test_delete_soft_user(pool: PgPool) -> sqlx::Result<()> {
     let phone = PhoneNumber::new("+573001444444".to_string()).unwrap();
 
     let user = User::new(
-        Some(domain::user::value_objects::Username("testuser_delete".to_string()).unwrap()),
+        Some(Username::new("testuser_delete".to_string()).unwrap()),
         phone.clone(),
         None,
     );
