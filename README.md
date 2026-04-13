@@ -163,6 +163,23 @@ make test    # Ejecuta tests
 make lint    # Verifica formato y linting
 ```
 
+## Desarrollo — Obteniendo el OTP
+
+En entorno local, el código OTP se almacena en Redis. Para obtenerlo:
+
+```bash
+# Después de /auth/register
+docker exec messenger_backend-redis-1 redis-cli GET "otp:register:+573001234567"
+
+# Después de /auth/login
+docker exec messenger_backend-redis-1 redis-cli GET "otp:login:+573001234567"
+
+# Después de /auth/recover
+docker exec messenger_backend-redis-1 redis-cli GET "otp:recover:+573001234567"
+```
+
+Reemplazar `+573001234567` por el número de teléfono usado.
+
 ## Convenciones de Código
 
 - Rama principal: `develop`
