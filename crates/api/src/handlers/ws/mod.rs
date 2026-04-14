@@ -4,6 +4,7 @@ pub mod handlers;
 pub use handlers::ws_handler;
 
 use dashmap::DashMap;
+use infrastructure::repositories::chat::PostgresChatRepository;
 use infrastructure::repositories::user::PostgresUserRepository;
 use redis::aio::ConnectionManager;
 use std::sync::Arc;
@@ -15,4 +16,5 @@ pub struct WsState {
     pub redis: ConnectionManager,
     pub redis_url: String,
     pub user_repo: Arc<PostgresUserRepository>,
+    pub chat_repo: Arc<PostgresChatRepository>,
 }

@@ -83,6 +83,7 @@ pub fn create_router(
         redis: redis_manager.clone(),
         redis_url: config.redis.url.clone(),
         user_repo: user_repo.clone(),
+        chat_repo: chat_repo.clone(),
     });
 
     let ws_router_state = WsRouterState {

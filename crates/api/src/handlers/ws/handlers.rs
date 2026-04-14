@@ -5,8 +5,10 @@ use axum::{
     },
     response::IntoResponse,
 };
+use chrono::{DateTime, Utc};
 use domain::user::repository::UserRepository;
 use futures_util::{SinkExt, StreamExt};
+use infrastructure::repositories::chat::PostgresChatRepository;
 use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc};
@@ -90,13 +92,14 @@ async fn handle_socket(socket: WebSocket, user_id: Uuid, ws_state: Arc<WsState>)
     let connections_for_cleanup = ws_state.connections.clone();
     let redis_for_cleanup = redis.clone();
     let user_repo = ws_state.user_repo.clone();
+    let ws_state_clone = ws_state.clone();
 
     tokio::spawn(async move {
         while let Some(msg) = read.next().await {
             match msg {
                 Ok(axum::extract::ws::Message::Text(text)) => {
                     if let Ok(client_msg) = serde_json::from_str::<WsClientMessage>(&text) {
-                        handle_client_message(client_msg, &tx, &redis, user_id_for_read).await;
+                        handle_client_message(client_msg, &tx, &redis, user_id_for_read, ws_state_clone.clone()).await;
                     }
                 }
                 Ok(axum::extract::ws::Message::Ping(_)) => {}
@@ -146,6 +149,7 @@ async fn handle_client_message(
     tx: &mpsc::Sender<String>,
     redis: &redis::aio::ConnectionManager,
     user_id: Uuid,
+    ws_state: Arc<WsState>,
 ) {
     match msg {
         WsClientMessage::TypingStart { chat_id } => {
@@ -212,13 +216,84 @@ async fn handle_client_message(
                     .await;
             });
         }
-        WsClientMessage::SyncRequest { since: _ } => {
-            let payload = json!({
-                "type": "sync_response",
-                "payload": {},
-                "timestamp": chrono::Utc::now().to_rfc3339()
+        WsClientMessage::SyncRequest { since } => {
+            let chat_repo = ws_state.chat_repo.clone();
+            let tx = tx.clone();
+            let user_id = user_id;
+
+            tokio::spawn(async move {
+                if let Some(since) = since {
+                    match sync_messages_after(chat_repo.as_ref(), user_id, since).await {
+                        Ok(messages) => {
+                            let payload = json!({
+                                "type": "sync_response",
+                                "payload": {
+                                    "messages": messages
+                                },
+                                "timestamp": Utc::now().to_rfc3339()
+                            });
+                            let _ = tx.send(payload.to_string()).await;
+                        }
+                        Err(_) => {
+                            let payload = json!({
+                                "type": "sync_response",
+                                "payload": {
+                                    "messages": Vec::<serde_json::Value>::new()
+                                },
+                                "timestamp": Utc::now().to_rfc3339()
+                            });
+                            let _ = tx.send(payload.to_string()).await;
+                        }
+                    }
+                } else {
+                    let payload = json!({
+                        "type": "sync_response",
+                        "payload": {
+                            "messages": Vec::<serde_json::Value>::new()
+                        },
+                        "timestamp": Utc::now().to_rfc3339()
+                    });
+                    let _ = tx.send(payload.to_string()).await;
+                }
             });
-            let _ = tx.send(payload.to_string()).await;
         }
     }
+}
+
+async fn sync_messages_after(
+    chat_repo: &PostgresChatRepository,
+    user_id: Uuid,
+    since: DateTime<Utc>,
+) -> Result<Vec<serde_json::Value>, ()> {
+    use domain::chat::repository::{ChatRepository, MessageDirection};
+    
+    let chat_previews = chat_repo
+        .list_chats_for_user(user_id, None, 50)
+        .await
+        .map_err(|_| ())?;
+
+    let mut all_messages = Vec::new();
+
+    for preview in chat_previews {
+        let messages = chat_repo
+            .list_messages(user_id, preview.chat_id, None, MessageDirection::Before, 50)
+            .await
+            .map_err(|_| ())?;
+
+        for msg in messages {
+            if msg.created_at > since {
+                all_messages.push(serde_json::json!({
+                    "chat_id": msg.chat_id,
+                    "message_id": msg.id,
+                    "sender_id": msg.sender_id,
+                    "content_encrypted": msg.content_encrypted,
+                    "content_iv": msg.content_iv,
+                    "message_type": msg.message_type,
+                    "created_at": msg.created_at,
+                }));
+            }
+        }
+    }
+
+    Ok(all_messages)
 }
