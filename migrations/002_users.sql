@@ -6,7 +6,7 @@ CREATE TABLE users (
     username          TEXT        UNIQUE,
     phone             TEXT        UNIQUE NOT NULL,
     email             TEXT        UNIQUE,
-    -- password_hash eliminado (Fase 03: OTP + PIN local)
+    password_hash     TEXT        NOT NULL,
     avatar_url        TEXT,
     status_text       TEXT        DEFAULT '',
     two_fa_enabled    BOOLEAN     NOT NULL DEFAULT FALSE,

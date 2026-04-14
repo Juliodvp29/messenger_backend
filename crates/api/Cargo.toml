@@ -32,3 +32,4 @@ redis.workspace = true
 thiserror.workspace = true
 rand.workspace = true
 sqlx.workspace = true
+aws-sdk-s3.workspace = true
