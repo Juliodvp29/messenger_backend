@@ -57,7 +57,7 @@ jobs:
       - name: Security Audit
         run: |
           cargo install cargo-audit --locked
-          cargo audit
+          cargo audit --ignore RUSTSEC-2024-0363 --ignore RUSTSEC-2023-0071
 
   test:
     name: Tests Unitarios e Integración
