@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT sv.viewer_id, up.display_name, u.avatar_url, sv.reaction, sv.viewed_at\n            FROM story_views sv JOIN users u ON u.id = sv.viewer_id\n            LEFT JOIN user_profiles up ON up.user_id = sv.viewer_id WHERE sv.story_id = $1 ORDER BY sv.viewed_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "viewer_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "display_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "avatar_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "reaction",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "viewed_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "cdfda20154d27e70bf67bd7b0db1a22915aa106595c298bbe6d0af5773ea684e"
+}
