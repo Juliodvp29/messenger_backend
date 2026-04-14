@@ -24,6 +24,7 @@ env:
   SERVER__CORS_ORIGINS: "*"
   SERVER__RATE_LIMIT_ENABLED: false
   DATABASE__URL: postgres://messenger:messenger_secret@localhost:5434/messenger_test
+  DATABASE_URL: postgres://messenger:messenger_secret@localhost:5434/messenger_test
   REDIS__URL: redis://localhost:6379
   DATABASE__MAX_CONNECTIONS: 5
   DATABASE__MIN_CONNECTIONS: 1
@@ -90,5 +91,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Rust
         uses: dtolnay/rust-toolchain@nightly
+      - name: Install sqlx-cli
+        run: cargo install sqlx-cli --no-default-features --features postgres
+
       - name: Run Tests
         run: cargo test --workspace

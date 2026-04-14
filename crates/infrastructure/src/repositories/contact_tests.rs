@@ -5,7 +5,7 @@ use domain::user::value_objects::PhoneNumber;
 use domain::user::value_objects::UserId;
 use sqlx::PgPool;
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn test_create_contact(pool: PgPool) -> sqlx::Result<()> {
     let repo = PostgresContactRepository::new(pool.clone());
     let owner_id = UserId(uuid::Uuid::new_v4());
@@ -25,7 +25,7 @@ async fn test_create_contact(pool: PgPool) -> sqlx::Result<()> {
     Ok(())
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn test_find_all_by_owner(pool: PgPool) -> sqlx::Result<()> {
     let repo = PostgresContactRepository::new(pool.clone());
     let owner_id = UserId(uuid::Uuid::new_v4());
@@ -52,7 +52,7 @@ async fn test_find_all_by_owner(pool: PgPool) -> sqlx::Result<()> {
     Ok(())
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn test_update_contact(pool: PgPool) -> sqlx::Result<()> {
     let repo = PostgresContactRepository::new(pool.clone());
     let owner_id = UserId(uuid::Uuid::new_v4());
@@ -80,7 +80,7 @@ async fn test_update_contact(pool: PgPool) -> sqlx::Result<()> {
     Ok(())
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn test_delete_contact(pool: PgPool) -> sqlx::Result<()> {
     let repo = PostgresContactRepository::new(pool.clone());
     let owner_id = UserId(uuid::Uuid::new_v4());

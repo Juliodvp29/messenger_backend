@@ -4,7 +4,7 @@ use domain::user::repository::UserRepository;
 use domain::user::value_objects::{PhoneNumber, UserId, Username};
 use sqlx::PgPool;
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn test_create_user(pool: PgPool) -> sqlx::Result<()> {
     let repo = PostgresUserRepository::new(pool.clone());
     let user_id = UserId(uuid::Uuid::new_v4());
@@ -25,7 +25,7 @@ async fn test_create_user(pool: PgPool) -> sqlx::Result<()> {
     Ok(())
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn test_find_by_phone(pool: PgPool) -> sqlx::Result<()> {
     let repo = PostgresUserRepository::new(pool.clone());
     let phone = PhoneNumber::new("+573001222222".to_string()).unwrap();
@@ -48,7 +48,7 @@ async fn test_find_by_phone(pool: PgPool) -> sqlx::Result<()> {
     Ok(())
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn test_update_user(pool: PgPool) -> sqlx::Result<()> {
     let repo = PostgresUserRepository::new(pool.clone());
     let phone = PhoneNumber::new("+573001333333".to_string()).unwrap();
@@ -79,7 +79,7 @@ async fn test_update_user(pool: PgPool) -> sqlx::Result<()> {
     Ok(())
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../migrations")]
 async fn test_delete_soft_user(pool: PgPool) -> sqlx::Result<()> {
     let repo = PostgresUserRepository::new(pool.clone());
     let phone = PhoneNumber::new("+573001444444".to_string()).unwrap();
