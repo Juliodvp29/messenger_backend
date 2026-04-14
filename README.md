@@ -11,7 +11,7 @@ Backend modular en Rust para una aplicación de mensajería estilo WhatsApp/Tele
 | 01 | Fundamentos y Configuración | ✅ Completado |
 | 02 | Base de Datos y Migraciones | ✅ Completado |
 | 03 | Autenticación y Seguridad | ✅ Completado |
-| 04 | Cifrado E2E | 🔄 En desarrollo |
+| 04 | Cifrado E2E | ✅ Completado |
 | 05 | Chats y Mensajes | ⏳ Pendiente |
 | 06 | Tiempo Real (WebSockets) | ⏳ Pendiente |
 | 07-13 | Stories, Notificaciones, etc. | ⏳ Pendiente |
@@ -80,6 +80,38 @@ Todos los endpoints requieren formato JSON (`Content-Type: application/json`).
 | POST | `/auth/2fa/verify` | Verifica TOTP después de login | No |
 | GET | `/health` | Health check | No |
 
+## Endpoints — Fase 04 (Cifrado E2E)
+
+Gestión de claves criptográficas para el protocolo X3DH.
+
+| Método | Endpoint | Descripción | Auth |
+|--------|----------|-----------|------|
+| POST | `/keys/upload` | Sube Identity Key y Signed Prekey | Bearer |
+| POST | `/keys/upload-prekeys` | Sube lote de One-Time Prekeys | Bearer |
+| GET | `/keys/me/count` | Obtiene conteo de OPKs disponibles | Bearer |
+| GET | `/keys/:user_id` | Obtiene bundle de claves públicas de un usuario | Bearer |
+| GET | `/keys/:user_id/fingerprint` | Obtiene huella digital de la Identity Key | Bearer |
+
+### Flujo de Cifrado (X3DH)
+
+```bash
+# 1. El usuario sube su Identity Key y Signed Prekey al registrarse/iniciar sesión
+curl -X POST http://localhost:3000/keys/upload \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"identity_key":"IK_BASE64","signed_prekey":{"id":1,"key":"SPK_BASE64","signature":"SIG_BASE64"}}'
+
+# 2. El usuario sube un lote de One-Time Prekeys (ej. 50 claves)
+curl -X POST http://localhost:3000/keys/upload-prekeys \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '[{"id":1,"key":"OPK1_BASE64"},{"id":2,"key":"OPK2_BASE64"}]'
+
+# 3. Para iniciar un chat, se solicita el "Bundle" del destinatario
+curl -X GET http://localhost:3000/keys/00000000-0000-0000-0000-000000000002 \
+  -H "Authorization: Bearer $TOKEN"
+```
+
 ### Flujo de Registro
 
 ```bash
@@ -94,7 +126,7 @@ redis-cli GET otp:register:+573001234567
 # 3. Confirmar registro
 curl -X POST http://localhost:3000/auth/verify-phone \
   -H "Content-Type: application/json" \
-  -d '{"phone":"+573001234567","code":"123456"}'
+  -d '{"phone":"+573001234567","code":"123456","device_id":"uuid","device_name":"TestPhone","device_type":"android"}'
 
 # Response: { "access_token": "...", "refresh_token": "...", "expires_in": 900, "user": {...} }
 ```
@@ -110,7 +142,7 @@ curl -X POST http://localhost:3000/auth/login \
 # 2. Verificar OTP
 curl -X POST http://localhost:3000/auth/login/verify \
   -H "Content-Type: application/json" \
-  -d '{"phone":"+573001234567","code":"123456"}'
+  -d '{"phone":"+573001234567","code":"123456","device_id":"uuid","device_name":"TestPhone","device_type":"android"}'
 ```
 
 ## Inicio Rápido
@@ -190,10 +222,6 @@ Reemplazar `+573001234567` por el número de teléfono usado.
 - Errores centralizados con `thiserror`
 - Middleware de autenticación con JWT
 
-## Documentación Adicional
-
-- [backend_roadmap.md](./backend_roadmap.md) — Plan de desarrollo completo
-- [AGENTS.md](./AGENTS.md) — Instrucciones para agentes IA
 
 ## Seguridad
 

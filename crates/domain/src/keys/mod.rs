@@ -22,6 +22,16 @@ pub struct UserKeys {
     pub prekey_count: i32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyBundleWithOpk {
+    pub identity_key: String,
+    pub signed_prekey: String,
+    pub signed_prekey_id: i32,
+    pub signed_prekey_sig: String,
+    pub one_time_prekey_id: Option<i32>,
+    pub one_time_prekey: Option<String>,
+}
+
 pub trait KeyRepository: Send + Sync {
     async fn upsert_keys(
         &self,
@@ -55,8 +65,5 @@ pub trait KeyRepository: Send + Sync {
     async fn get_public_key_bundle(
         &self,
         target_user_id: uuid::Uuid,
-    ) -> Result<
-        Option<(String, String, i32, String, Option<i32>, Option<String>)>,
-        shared::error::DomainError,
-    >;
+    ) -> Result<Option<KeyBundleWithOpk>, shared::error::DomainError>;
 }
