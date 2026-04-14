@@ -165,14 +165,16 @@ impl KeyRepository for PostgresKeyRepository {
         .await
         .map_err(|e| DomainError::Internal(e.to_string()))?;
 
-        Ok(row.map(|r: (String, String, i32, String, Option<i32>, Option<String>)| KeyBundleWithOpk {
-            identity_key: r.0,
-            signed_prekey: r.1,
-            signed_prekey_id: r.2,
-            signed_prekey_sig: r.3,
-            one_time_prekey_id: r.4,
-            one_time_prekey: r.5,
-        }))
+        Ok(row.map(
+            |r: (String, String, i32, String, Option<i32>, Option<String>)| KeyBundleWithOpk {
+                identity_key: r.0,
+                signed_prekey: r.1,
+                signed_prekey_id: r.2,
+                signed_prekey_sig: r.3,
+                one_time_prekey_id: r.4,
+                one_time_prekey: r.5,
+            },
+        ))
     }
 }
 

@@ -1,7 +1,7 @@
 use axum::{
     Extension, Json,
     extract::{Path, State},
-    http::{header, HeaderMap, StatusCode},
+    http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
 };
 use std::sync::Arc;
@@ -39,7 +39,11 @@ pub async fn upload_keys(
             .into_response());
     }
 
-    if let Err(e) = verify_signed_prekey(&req.identity_key, &req.signed_prekey.key, &req.signed_prekey.signature) {
+    if let Err(e) = verify_signed_prekey(
+        &req.identity_key,
+        &req.signed_prekey.key,
+        &req.signed_prekey.signature,
+    ) {
         return Ok((
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({"error": format!("invalid signed_prekey signature: {}", e)})),
@@ -182,9 +186,8 @@ pub async fn get_key_bundle(
         .await
         .map_err(|e| ApiError(DomainError::Internal(e.to_string())))?;
 
-    let bundle = bundle.ok_or_else(|| {
-        ApiError(DomainError::NotFound("user keys not found".to_string()))
-    })?;
+    let bundle =
+        bundle.ok_or_else(|| ApiError(DomainError::NotFound("user keys not found".to_string())))?;
 
     let count = state
         .key_repo
@@ -193,11 +196,7 @@ pub async fn get_key_bundle(
         .map_err(|e| ApiError(DomainError::Internal(e.to_string())))?;
 
     if count < 20 {
-        tracing::warn!(
-            "User {} has low prekey count: {}",
-            target_user_id,
-            count
-        );
+        tracing::warn!("User {} has low prekey count: {}", target_user_id, count);
     }
 
     let response = Json(KeyBundleResponse {
@@ -313,7 +312,7 @@ fn verify_signed_prekey(
     signed_prekey_b64: &str,
     signature_b64: &str,
 ) -> Result<(), String> {
-    use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+    use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
     use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 
     let identity_key_bytes = BASE64
@@ -348,9 +347,12 @@ fn verify_signed_prekey(
         return Err("signature must be 64 bytes".to_string());
     }
 
-    let signature = Signature::from_bytes(sig_bytes.as_slice().try_into().map_err(
-        |_| "invalid signature length",
-    )?);
+    let signature = Signature::from_bytes(
+        sig_bytes
+            .as_slice()
+            .try_into()
+            .map_err(|_| "invalid signature length")?,
+    );
 
     identity_key
         .verify(spk_bytes.as_slice(), &signature)
@@ -360,7 +362,7 @@ fn verify_signed_prekey(
 }
 
 fn validate_one_time_prekeys(prekeys: &[OneTimePrekeyUpload]) -> Result<(), String> {
-    use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+    use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
     if prekeys.len() > 200 {
         return Err("maximum 200 one-time prekeys allowed".to_string());
@@ -370,7 +372,10 @@ fn validate_one_time_prekeys(prekeys: &[OneTimePrekeyUpload]) -> Result<(), Stri
 
     for prekey in prekeys {
         if prekey.id < 0 {
-            return Err(format!("invalid prekey id: {} (must be positive)", prekey.id));
+            return Err(format!(
+                "invalid prekey id: {} (must be positive)",
+                prekey.id
+            ));
         }
 
         if !seen_ids.insert(prekey.id) {
