@@ -1,0 +1,16 @@
+pub mod dto;
+pub mod handlers;
+
+pub use handlers::ws_handler;
+
+use dashmap::DashMap;
+use redis::aio::ConnectionManager;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use uuid::Uuid;
+
+pub struct WsState {
+    pub connections: Arc<DashMap<Uuid, Vec<Arc<Mutex<tokio::sync::mpsc::Sender<String>>>>>>,
+    pub redis: ConnectionManager,
+    pub redis_url: String,
+}
