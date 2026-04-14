@@ -14,7 +14,9 @@ Backend modular en Rust para una aplicación de mensajería estilo WhatsApp/Tele
 | 04 | Cifrado E2E | ✅ Completado |
 | 05 | Chats y Mensajes | ✅ Completado |
 | 06 | Tiempo Real (WebSockets) | ✅ Completado |
-| 07-13 | Stories, Notificaciones, etc. | ⏳ Pendiente |
+| 07 | Stories y Reacciones | ✅ Completado |
+| 08 | Notificaciones | ✅ Completado |
+| 09-13 | Grupos, Búsqueda, Performance, etc. | ⏳ Pendiente |
 
 ## Arquitectura
 
@@ -165,9 +167,82 @@ El cliente envía por WebSocket:
 
 Canales usados para distribución entre instancias:
 
-- `user:{user_id}:events` ��� Eventos dirigidos a un usuario
+- `user:{user_id}:events` — Eventos dirigidos a un usuario
 - `chat:{chat_id}:events` — Eventos de un chat específico
 - `presence:{user_id}` — Clave de presencia (TTL 65s)
+
+## Endpoints — Fase 07 (Stories y Reacciones)
+
+Stories efímeras con privacidad granular y tiempo real.
+
+| Método | Endpoint | Descripción | Auth |
+|--------|----------|-----------|------|
+| POST | `/stories` | Publicar story | Bearer |
+| GET | `/stories` | Listar stories de contactos | Bearer |
+| GET | `/stories/my` | Listar mis stories | Bearer |
+| DELETE | `/stories/:id` | Eliminar story | Bearer |
+| POST | `/stories/:id/view` | Registrar vista | Bearer |
+| POST | `/stories/:id/react` | Reaccionar a story | Bearer |
+| GET | `/stories/:id/views` | Ver lista de vistas | Bearer |
+
+### Modos de Privacidad
+
+| Privacidad | Descripción |
+|------------|-------------|
+| `everyone` | Visible para todos |
+| `contacts` | Solo contactos |
+| `contacts_except` | Contactos excepto algunos |
+| `selected` | Solo usuarios seleccionados |
+| `only_me` | Solo yo (no visible para otros) |
+
+```bash
+# Publicar story
+curl -X POST http://localhost:3000/stories \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content_url": "https://s3.../story_media/...",
+    "content_type": "image",
+    "caption": "Mi caption",
+    "privacy": "contacts"
+  }'
+```
+
+## Endpoints — Fase 08 (Notificaciones)
+
+Push notifications y notificaciones in-app.
+
+| Método | Endpoint | Descripción | Auth |
+|--------|----------|-----------|------|
+| GET | `/notifications` | Listar notificaciones | Bearer |
+| PATCH | `/notifications/:id/read` | Marcar como leída | Bearer |
+| PATCH | `/notifications/read-all` | Marcar todas como leídas | Bearer |
+| DELETE | `/notifications/read` | Eliminar leídas | Bearer |
+| PATCH | `/chats/:id/settings` | Configurar chat (silenciar, pinear) | Bearer |
+
+### Configuración de Chat
+
+```bash
+# Silenciar chat por 24 horas
+curl -X PATCH http://localhost:3000/chats/{chat_id}/settings \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"is_muted": true, "muted_until": "2024-01-16T12:00:00Z"}'
+
+# Pinear chat
+curl -X PATCH http://localhost:3000/chats/{chat_id}/settings \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"is_pinned": true}'
+```
+
+### Push Notifications
+
+El servidor envía notificaciones push cuando el usuario está offline:
+- **FCM** (Firebase Cloud Messaging) para Android/Web
+- **APNs** (Apple Push Notification service) para iOS
+
+> **Nota**: El payload del push NUNCA incluye el contenido del mensaje por privacidad.
 
 ## Endpoints — Fase 04 (Cifrado E2E)
 
