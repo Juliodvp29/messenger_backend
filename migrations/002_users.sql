@@ -6,7 +6,7 @@ CREATE TABLE users (
     username          TEXT        UNIQUE,
     phone             TEXT        UNIQUE NOT NULL,
     email             TEXT        UNIQUE,
-    -- password_hash eliminado (Fase 03: OTP + PIN local)
+    password_hash     TEXT        NOT NULL,
     avatar_url        TEXT,
     status_text       TEXT        DEFAULT '',
     two_fa_enabled    BOOLEAN     NOT NULL DEFAULT FALSE,
@@ -20,7 +20,8 @@ CREATE TABLE users (
 
 CREATE TRIGGER users_updated_at
     BEFORE UPDATE ON users
-    FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
+    FOR EACH ROW
+    EXECUTE FUNCTION trigger_set_updated_at();
 
 -- Índices users
 CREATE INDEX idx_users_phone       ON users (phone)       WHERE deleted_at IS NULL;

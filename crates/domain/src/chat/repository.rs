@@ -1,4 +1,4 @@
-use super::entity::{Chat, ChatMessage, ChatPreview};
+use super::entity::{Chat, ChatMessage, ChatPreview, PendingAttachment};
 use chrono::{DateTime, Utc};
 use shared::error::DomainResult;
 use uuid::Uuid;
@@ -30,6 +30,27 @@ pub struct NewMessage {
     pub reply_to_id: Option<Uuid>,
     pub is_forwarded: bool,
     pub metadata: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone)]
+pub struct NewPendingAttachment {
+    pub attachment_id: Uuid,
+    pub uploader_id: Uuid,
+    pub chat_id: Uuid,
+    pub object_key: String,
+    pub file_url: String,
+    pub file_type: String,
+    pub file_size: i64,
+    pub file_name: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConfirmAttachmentInput {
+    pub attachment_id: Uuid,
+    pub message_id: Uuid,
+    pub uploader_id: Uuid,
+    pub encryption_key_enc: Option<String>,
+    pub encryption_iv: Option<String>,
 }
 
 #[allow(async_fn_in_trait)]
@@ -71,4 +92,17 @@ pub trait ChatRepository: Send + Sync {
         direction: MessageDirection,
         limit: i64,
     ) -> DomainResult<Vec<ChatMessage>>;
+
+    async fn create_pending_attachment(
+        &self,
+        input: NewPendingAttachment,
+    ) -> DomainResult<PendingAttachment>;
+
+    async fn get_pending_attachment_for_user(
+        &self,
+        attachment_id: Uuid,
+        uploader_id: Uuid,
+    ) -> DomainResult<Option<PendingAttachment>>;
+
+    async fn confirm_attachment(&self, input: ConfirmAttachmentInput) -> DomainResult<()>;
 }

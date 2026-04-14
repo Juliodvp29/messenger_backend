@@ -1,7 +1,9 @@
 use chrono::{DateTime, Utc};
+use domain::chat::entity::PendingAttachment;
 use domain::chat::entity::{Chat, ChatMessage, ChatPreview, ChatType};
 use domain::chat::repository::{
-    ChatCursor, ChatRepository, MessageCursor, MessageDirection, NewMessage,
+    ChatCursor, ChatRepository, ConfirmAttachmentInput, MessageCursor, MessageDirection,
+    NewMessage, NewPendingAttachment,
 };
 use shared::error::{DomainError, DomainResult};
 use sqlx::PgPool;
@@ -495,6 +497,169 @@ impl ChatRepository for PostgresChatRepository {
         }
 
         Ok(rows.into_iter().map(map_message_row).collect())
+    }
+
+    async fn create_pending_attachment(
+        &self,
+        input: NewPendingAttachment,
+    ) -> DomainResult<PendingAttachment> {
+        ensure_active_membership_pool(&self.pool, input.uploader_id, input.chat_id).await?;
+
+        let row = sqlx::query_as::<
+            _,
+            (
+                Uuid,
+                Uuid,
+                Uuid,
+                String,
+                String,
+                String,
+                i64,
+                Option<String>,
+                bool,
+                DateTime<Utc>,
+            ),
+        >(
+            r#"
+            INSERT INTO message_attachments (
+                id, message_id, uploader_id, chat_id, object_key, file_url, file_type, file_size, file_name, confirmed
+            )
+            VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8, FALSE)
+            RETURNING id, uploader_id, chat_id, object_key, file_url, file_type, file_size, file_name, confirmed, created_at
+            "#,
+        )
+        .bind(input.attachment_id)
+        .bind(input.uploader_id)
+        .bind(input.chat_id)
+        .bind(input.object_key)
+        .bind(input.file_url)
+        .bind(input.file_type)
+        .bind(input.file_size)
+        .bind(input.file_name)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        Ok(PendingAttachment {
+            id: row.0,
+            uploader_id: row.1,
+            chat_id: row.2,
+            object_key: row.3,
+            file_url: row.4,
+            file_type: row.5,
+            file_size: row.6,
+            file_name: row.7,
+            confirmed: row.8,
+            created_at: row.9,
+        })
+    }
+
+    async fn get_pending_attachment_for_user(
+        &self,
+        attachment_id: Uuid,
+        uploader_id: Uuid,
+    ) -> DomainResult<Option<PendingAttachment>> {
+        let row = sqlx::query_as::<
+            _,
+            (
+                Uuid,
+                Uuid,
+                Uuid,
+                String,
+                String,
+                String,
+                i64,
+                Option<String>,
+                bool,
+                DateTime<Utc>,
+            ),
+        >(
+            r#"
+            SELECT
+                id, uploader_id, chat_id, object_key, file_url, file_type, file_size, file_name, confirmed, created_at
+            FROM message_attachments
+            WHERE id = $1
+              AND uploader_id = $2
+              AND confirmed = FALSE
+            "#,
+        )
+        .bind(attachment_id)
+        .bind(uploader_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        Ok(row.map(|r| PendingAttachment {
+            id: r.0,
+            uploader_id: r.1,
+            chat_id: r.2,
+            object_key: r.3,
+            file_url: r.4,
+            file_type: r.5,
+            file_size: r.6,
+            file_name: r.7,
+            confirmed: r.8,
+            created_at: r.9,
+        }))
+    }
+
+    async fn confirm_attachment(&self, input: ConfirmAttachmentInput) -> DomainResult<()> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        let chat_id = sqlx::query_scalar::<_, Uuid>(
+            r#"
+            SELECT m.chat_id
+            FROM messages m
+            WHERE m.id = $1
+              AND m.deleted_at IS NULL
+            "#,
+        )
+        .bind(input.message_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?
+        .ok_or_else(|| DomainError::NotFound("message not found".to_string()))?;
+
+        ensure_active_membership(&mut tx, input.uploader_id, chat_id).await?;
+
+        let updated = sqlx::query(
+            r#"
+            UPDATE message_attachments
+            SET message_id = $2,
+                encryption_key_enc = $3,
+                encryption_iv = $4,
+                confirmed = TRUE,
+                confirmed_at = NOW()
+            WHERE id = $1
+              AND uploader_id = $5
+              AND chat_id = $6
+              AND confirmed = FALSE
+            "#,
+        )
+        .bind(input.attachment_id)
+        .bind(input.message_id)
+        .bind(input.encryption_key_enc)
+        .bind(input.encryption_iv)
+        .bind(input.uploader_id)
+        .bind(chat_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        if updated.rows_affected() == 0 {
+            return Err(DomainError::NotFound(
+                "pending attachment not found for message".to_string(),
+            ));
+        }
+
+        tx.commit()
+            .await
+            .map_err(|e| DomainError::Internal(e.to_string()))?;
+        Ok(())
     }
 }
 

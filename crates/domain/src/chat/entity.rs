@@ -73,3 +73,17 @@ pub struct ChatMessage {
     pub edited_at: Option<DateTime<Utc>>,
     pub deleted_at: Option<DateTime<Utc>>,
 }
+
+#[derive(Debug, Clone)]
+pub struct PendingAttachment {
+    pub id: Uuid,
+    pub uploader_id: Uuid,
+    pub chat_id: Uuid,
+    pub object_key: String,
+    pub file_url: String,
+    pub file_type: String,
+    pub file_size: i64,
+    pub file_name: Option<String>,
+    pub confirmed: bool,
+    pub created_at: DateTime<Utc>,
+}
