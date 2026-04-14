@@ -7,7 +7,9 @@ use crate::handlers::auth::{
     delete_session, list_sessions, login, login_verify, logout, recover, recover_verify, refresh,
     register, two_fa_setup, two_fa_setup_verify, two_fa_verify, verify_phone,
 };
-use crate::handlers::chats::{ChatsState, create_chat, get_chat, list_chats};
+use crate::handlers::chats::{
+    ChatsState, create_chat, get_chat, list_chats, list_messages, send_message,
+};
 use crate::handlers::keys::{
     KeysState, get_fingerprint, get_key_bundle, get_my_prekey_count, upload_keys, upload_prekeys,
 };
@@ -58,6 +60,7 @@ pub fn create_router(
 
     let chats_state = ChatsState {
         chat_repo: chat_repo.clone(),
+        redis: redis_manager.clone(),
     };
 
     let protected_auth_routes = Router::new()
@@ -86,6 +89,7 @@ pub fn create_router(
     let protected_chat_routes = Router::new()
         .route("/chats", post(create_chat).get(list_chats))
         .route("/chats/:id", get(get_chat))
+        .route("/chats/:id/messages", post(send_message).get(list_messages))
         .route_layer(middleware::from_fn_with_state(
             auth_middleware_state.clone(),
             auth_middleware,

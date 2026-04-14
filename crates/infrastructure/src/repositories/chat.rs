@@ -1,6 +1,8 @@
 use chrono::{DateTime, Utc};
-use domain::chat::entity::{Chat, ChatPreview, ChatType};
-use domain::chat::repository::{ChatCursor, ChatRepository};
+use domain::chat::entity::{Chat, ChatMessage, ChatPreview, ChatType};
+use domain::chat::repository::{
+    ChatCursor, ChatRepository, MessageCursor, MessageDirection, NewMessage,
+};
 use shared::error::{DomainError, DomainResult};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -327,4 +329,292 @@ impl ChatRepository for PostgresChatRepository {
             )
             .collect()
     }
+
+    async fn send_message(
+        &self,
+        sender_id: Uuid,
+        chat_id: Uuid,
+        message: NewMessage,
+    ) -> DomainResult<ChatMessage> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        let chat_type = ensure_active_membership(&mut tx, sender_id, chat_id).await?;
+        if chat_type == "private" {
+            ensure_not_blocked_in_private_chat(&mut tx, sender_id, chat_id).await?;
+        }
+
+        if message.message_type == "text"
+            && (message.content_encrypted.is_none() || message.content_iv.is_none())
+        {
+            return Err(DomainError::Validation(
+                "text messages require content_encrypted and content_iv".to_string(),
+            ));
+        }
+
+        let inserted = sqlx::query_as::<
+            _,
+            (
+                Uuid,
+                Uuid,
+                Option<Uuid>,
+                Option<Uuid>,
+                Option<String>,
+                Option<String>,
+                String,
+                Option<serde_json::Value>,
+                bool,
+                DateTime<Utc>,
+                Option<DateTime<Utc>>,
+                Option<DateTime<Utc>>,
+            ),
+        >(
+            r#"
+            INSERT INTO messages (
+                chat_id, sender_id, reply_to_id, content_encrypted, content_iv,
+                message_type, metadata, is_forwarded
+            )
+            VALUES ($1, $2, $3, $4, $5, $6::message_type, $7, $8)
+            RETURNING
+                id, chat_id, sender_id, reply_to_id, content_encrypted, content_iv,
+                message_type::text, metadata, is_forwarded, created_at, edited_at, deleted_at
+            "#,
+        )
+        .bind(chat_id)
+        .bind(sender_id)
+        .bind(message.reply_to_id)
+        .bind(message.content_encrypted)
+        .bind(message.content_iv)
+        .bind(message.message_type)
+        .bind(message.metadata)
+        .bind(message.is_forwarded)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        let message_id = inserted.0;
+        sqlx::query(
+            r#"
+            INSERT INTO message_status (message_id, user_id, status)
+            SELECT $1, cp.user_id, 'sent'
+            FROM chat_participants cp
+            WHERE cp.chat_id = $2
+              AND cp.left_at IS NULL
+            ON CONFLICT (message_id, user_id) DO NOTHING
+            "#,
+        )
+        .bind(message_id)
+        .bind(chat_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        tx.commit()
+            .await
+            .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        Ok(map_message_row(inserted))
+    }
+
+    async fn list_messages(
+        &self,
+        user_id: Uuid,
+        chat_id: Uuid,
+        cursor: Option<MessageCursor>,
+        direction: MessageDirection,
+        limit: i64,
+    ) -> DomainResult<Vec<ChatMessage>> {
+        ensure_active_membership_pool(&self.pool, user_id, chat_id).await?;
+
+        let page_size = limit.clamp(1, 50);
+        let cursor_ts = cursor.as_ref().map(|c| c.created_at);
+        let cursor_id = cursor.as_ref().map(|c| c.message_id);
+
+        let direction_str = match direction {
+            MessageDirection::Before => "before",
+            MessageDirection::After => "after",
+        };
+
+        let mut rows = sqlx::query_as::<
+            _,
+            (
+                Uuid,
+                Uuid,
+                Option<Uuid>,
+                Option<Uuid>,
+                Option<String>,
+                Option<String>,
+                String,
+                Option<serde_json::Value>,
+                bool,
+                DateTime<Utc>,
+                Option<DateTime<Utc>>,
+                Option<DateTime<Utc>>,
+            ),
+        >(
+            r#"
+            SELECT
+                id, chat_id, sender_id, reply_to_id, content_encrypted, content_iv,
+                message_type::text, metadata, is_forwarded, created_at, edited_at, deleted_at
+            FROM messages
+            WHERE chat_id = $1
+              AND deleted_at IS NULL
+              AND (
+                    $2::timestamptz IS NULL
+                    OR (
+                        $4::text = 'before'
+                        AND (created_at, id) < ($2::timestamptz, $3::uuid)
+                    )
+                    OR (
+                        $4::text = 'after'
+                        AND (created_at, id) > ($2::timestamptz, $3::uuid)
+                    )
+              )
+            ORDER BY
+                CASE WHEN $4::text = 'before' THEN created_at END DESC,
+                CASE WHEN $4::text = 'before' THEN id END DESC,
+                CASE WHEN $4::text = 'after' THEN created_at END ASC,
+                CASE WHEN $4::text = 'after' THEN id END ASC
+            LIMIT $5
+            "#,
+        )
+        .bind(chat_id)
+        .bind(cursor_ts)
+        .bind(cursor_id.unwrap_or_else(Uuid::nil))
+        .bind(direction_str)
+        .bind(page_size)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        if matches!(direction, MessageDirection::Before) {
+            rows.reverse();
+        }
+
+        Ok(rows.into_iter().map(map_message_row).collect())
+    }
+}
+
+fn map_message_row(
+    row: (
+        Uuid,
+        Uuid,
+        Option<Uuid>,
+        Option<Uuid>,
+        Option<String>,
+        Option<String>,
+        String,
+        Option<serde_json::Value>,
+        bool,
+        DateTime<Utc>,
+        Option<DateTime<Utc>>,
+        Option<DateTime<Utc>>,
+    ),
+) -> ChatMessage {
+    ChatMessage {
+        id: row.0,
+        chat_id: row.1,
+        sender_id: row.2,
+        reply_to_id: row.3,
+        content_encrypted: row.4,
+        content_iv: row.5,
+        message_type: row.6,
+        metadata: row.7,
+        is_forwarded: row.8,
+        created_at: row.9,
+        edited_at: row.10,
+        deleted_at: row.11,
+    }
+}
+
+async fn ensure_active_membership(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_id: Uuid,
+    chat_id: Uuid,
+) -> DomainResult<String> {
+    let chat_type = sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT c.type::text
+        FROM chats c
+        JOIN chat_participants cp ON cp.chat_id = c.id
+        WHERE c.id = $1
+          AND c.deleted_at IS NULL
+          AND cp.user_id = $2
+          AND cp.left_at IS NULL
+        "#,
+    )
+    .bind(chat_id)
+    .bind(user_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+    chat_type
+        .ok_or_else(|| DomainError::NotFound("chat not found or not a participant".to_string()))
+}
+
+async fn ensure_active_membership_pool(
+    pool: &PgPool,
+    user_id: Uuid,
+    chat_id: Uuid,
+) -> DomainResult<()> {
+    let exists = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT 1
+        FROM chat_participants cp
+        JOIN chats c ON c.id = cp.chat_id
+        WHERE cp.chat_id = $1
+          AND cp.user_id = $2
+          AND cp.left_at IS NULL
+          AND c.deleted_at IS NULL
+        LIMIT 1
+        "#,
+    )
+    .bind(chat_id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+    if exists.is_none() {
+        return Err(DomainError::NotFound(
+            "chat not found or not a participant".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+async fn ensure_not_blocked_in_private_chat(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    sender_id: Uuid,
+    chat_id: Uuid,
+) -> DomainResult<()> {
+    let blocked = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT 1
+        FROM chat_participants cp
+        JOIN user_blocks ub
+          ON (ub.blocker_id = $1 AND ub.blocked_id = cp.user_id)
+          OR (ub.blocked_id = $1 AND ub.blocker_id = cp.user_id)
+        WHERE cp.chat_id = $2
+          AND cp.user_id <> $1
+          AND cp.left_at IS NULL
+        LIMIT 1
+        "#,
+    )
+    .bind(sender_id)
+    .bind(chat_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+    if blocked.is_some() {
+        return Err(DomainError::Unauthorized(
+            "cannot send messages in blocked private chat".to_string(),
+        ));
+    }
+    Ok(())
 }

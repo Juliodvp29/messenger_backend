@@ -57,3 +57,19 @@ pub struct ChatPreview {
     pub is_archived: bool,
     pub unread_count: i64,
 }
+
+#[derive(Debug, Clone)]
+pub struct ChatMessage {
+    pub id: Uuid,
+    pub chat_id: Uuid,
+    pub sender_id: Option<Uuid>,
+    pub reply_to_id: Option<Uuid>,
+    pub content_encrypted: Option<String>,
+    pub content_iv: Option<String>,
+    pub message_type: String,
+    pub metadata: Option<serde_json::Value>,
+    pub is_forwarded: bool,
+    pub created_at: DateTime<Utc>,
+    pub edited_at: Option<DateTime<Utc>>,
+    pub deleted_at: Option<DateTime<Utc>>,
+}

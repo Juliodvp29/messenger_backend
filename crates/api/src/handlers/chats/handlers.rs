@@ -5,8 +5,11 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use domain::chat::entity::{Chat, ChatPreview};
-use domain::chat::repository::{ChatCursor, ChatRepository};
+use domain::chat::entity::{Chat, ChatMessage, ChatPreview};
+use domain::chat::repository::{
+    ChatCursor, ChatRepository, MessageCursor, MessageDirection, NewMessage,
+};
+use redis::AsyncCommands;
 use shared::error::DomainError;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -14,7 +17,8 @@ use uuid::Uuid;
 use crate::error::ApiError;
 use crate::handlers::chats::dto::{
     ChatCursorDto, ChatPreviewResponse, ChatResponse, CreateChatRequest, ListChatsQuery,
-    ListChatsResponse,
+    ListChatsResponse, ListMessagesQuery, ListMessagesResponse, MessageCursorDto, MessageResponse,
+    SendMessageRequest,
 };
 use crate::middleware::auth::AuthenticatedUser;
 use infrastructure::repositories::chat::PostgresChatRepository;
@@ -22,6 +26,7 @@ use infrastructure::repositories::chat::PostgresChatRepository;
 #[derive(Clone)]
 pub struct ChatsState {
     pub chat_repo: Arc<PostgresChatRepository>,
+    pub redis: redis::aio::ConnectionManager,
 }
 
 pub async fn create_chat(
@@ -104,6 +109,77 @@ pub async fn list_chats(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+pub async fn send_message(
+    State(state): State<ChatsState>,
+    Extension(auth): Extension<AuthenticatedUser>,
+    Path(chat_id): Path<Uuid>,
+    Json(req): Json<SendMessageRequest>,
+) -> Result<Response, ApiError> {
+    let message = state
+        .chat_repo
+        .send_message(
+            auth.user_id,
+            chat_id,
+            NewMessage {
+                content_encrypted: req.content_encrypted,
+                content_iv: req.content_iv,
+                message_type: req.message_type,
+                reply_to_id: req.reply_to_id,
+                is_forwarded: req.is_forwarded,
+                metadata: req.metadata,
+            },
+        )
+        .await?;
+
+    publish_message_event(&state, &message).await?;
+
+    Ok((StatusCode::CREATED, Json(message_to_response(message))).into_response())
+}
+
+pub async fn list_messages(
+    State(state): State<ChatsState>,
+    Extension(auth): Extension<AuthenticatedUser>,
+    Path(chat_id): Path<Uuid>,
+    Query(query): Query<ListMessagesQuery>,
+) -> Result<Response, ApiError> {
+    let limit = query.limit.unwrap_or(50).clamp(1, 50);
+    let direction = match query.direction.as_deref().unwrap_or("before") {
+        "before" => MessageDirection::Before,
+        "after" => MessageDirection::After,
+        _ => {
+            return Err(ApiError(DomainError::Validation(
+                "direction must be before or after".to_string(),
+            )));
+        }
+    };
+
+    let decoded_cursor = decode_message_cursor(query.cursor.as_deref())?;
+    let fetch_limit = limit + 1;
+    let mut items = state
+        .chat_repo
+        .list_messages(
+            auth.user_id,
+            chat_id,
+            decoded_cursor,
+            direction,
+            fetch_limit,
+        )
+        .await?;
+
+    let has_more = items.len() as i64 > limit;
+    if has_more {
+        items.truncate(limit as usize);
+    }
+
+    let next_cursor = items.last().map(build_message_cursor).transpose()?;
+    let response = ListMessagesResponse {
+        items: items.into_iter().map(message_to_response).collect(),
+        next_cursor,
+        has_more,
+    };
+    Ok((StatusCode::OK, Json(response)).into_response())
+}
+
 fn decode_cursor(raw: Option<&str>) -> Result<Option<ChatCursor>, ApiError> {
     let Some(raw) = raw else {
         return Ok(None);
@@ -160,4 +236,66 @@ fn preview_to_response(preview: ChatPreview) -> ChatPreviewResponse {
         is_archived: preview.is_archived,
         unread_count: preview.unread_count,
     }
+}
+
+fn message_to_response(message: ChatMessage) -> MessageResponse {
+    MessageResponse {
+        id: message.id,
+        chat_id: message.chat_id,
+        sender_id: message.sender_id,
+        reply_to_id: message.reply_to_id,
+        content_encrypted: message.content_encrypted,
+        content_iv: message.content_iv,
+        message_type: message.message_type,
+        metadata: message.metadata,
+        is_forwarded: message.is_forwarded,
+        created_at: message.created_at,
+        edited_at: message.edited_at,
+        deleted_at: message.deleted_at,
+    }
+}
+
+fn decode_message_cursor(raw: Option<&str>) -> Result<Option<MessageCursor>, ApiError> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+
+    let decoded = URL_SAFE_NO_PAD
+        .decode(raw)
+        .map_err(|_| DomainError::Validation("invalid message cursor encoding".to_string()))?;
+    let dto: MessageCursorDto = serde_json::from_slice(&decoded)
+        .map_err(|_| DomainError::Validation("invalid message cursor payload".to_string()))?;
+    Ok(Some(MessageCursor {
+        created_at: dto.created_at,
+        message_id: dto.message_id,
+    }))
+}
+
+fn build_message_cursor(item: &ChatMessage) -> Result<String, ApiError> {
+    let dto = MessageCursorDto {
+        created_at: item.created_at,
+        message_id: item.id,
+    };
+    let encoded = serde_json::to_vec(&dto)
+        .map_err(|e| DomainError::Internal(format!("failed to serialize message cursor: {e}")))?;
+    Ok(URL_SAFE_NO_PAD.encode(encoded))
+}
+
+async fn publish_message_event(state: &ChatsState, message: &ChatMessage) -> Result<(), ApiError> {
+    let mut redis = state.redis.clone();
+    let channel = format!("chat:{}:events", message.chat_id);
+    let payload = serde_json::json!({
+        "type": "new_message",
+        "chat_id": message.chat_id,
+        "message_id": message.id,
+        "sender_id": message.sender_id,
+        "created_at": message.created_at,
+    })
+    .to_string();
+
+    let _: i64 = redis
+        .publish(channel, payload)
+        .await
+        .map_err(|e| DomainError::Internal(format!("failed to publish message event: {e}")))?;
+    Ok(())
 }
