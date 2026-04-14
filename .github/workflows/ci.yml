@@ -40,6 +40,8 @@ env:
   SMS__PROVIDER: test
   SMS__API_KEY: test
   SMS__SENDER_ID: test
+  PUSH__APNS_BUNDLE_ID: com.messenger.test
+  PUSH__FCM_API_KEY: test_fcm_key
 
 jobs:
   quality:
