@@ -30,8 +30,8 @@ pub fn create_router(
     let otp_service = Arc::new(OtpService::new(redis_manager.clone(), 600));
 
     let jwt_service = Arc::new(JwtService::new(
-        config.jwt.secret.clone(),
-        config.jwt.refresh_secret.clone(),
+        config.jwt.private_key.clone(),
+        config.jwt.public_key.clone(),
         config.jwt.access_ttl_seconds,
         config.jwt.refresh_ttl_seconds,
         Some(redis_manager.clone()),

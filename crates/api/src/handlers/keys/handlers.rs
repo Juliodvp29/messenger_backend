@@ -51,6 +51,20 @@ pub async fn upload_keys(
             .into_response());
     }
 
+    state
+        .key_repo
+        .upsert_keys(
+            auth.user_id,
+            &req.identity_key,
+            &domain::keys::SignedPrekey {
+                id: req.signed_prekey.id,
+                key: req.signed_prekey.key.clone(),
+                signature: req.signed_prekey.signature.clone(),
+            },
+        )
+        .await
+        .map_err(|e| ApiError(DomainError::Internal(e.to_string())))?;
+
     if !req.one_time_prekeys.is_empty() {
         if let Err(e) = validate_one_time_prekeys(&req.one_time_prekeys) {
             return Ok((
