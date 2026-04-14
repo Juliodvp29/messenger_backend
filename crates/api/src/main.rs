@@ -40,8 +40,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await;
     });
 
-    let app: IntoMakeServiceWithConnectInfo<_, SocketAddr> = create_router(&config, db_pool, redis_manager)
-        .into_make_service_with_connect_info();
+    let app: IntoMakeServiceWithConnectInfo<_, SocketAddr> =
+        create_router(&config, db_pool, redis_manager).into_make_service_with_connect_info();
 
     let addr = format!("{}:{}", config.server.host, config.server.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
