@@ -1,6 +1,10 @@
 use chrono::{DateTime, Utc};
 use domain::chat::entity::PendingAttachment;
 use domain::chat::entity::{Chat, ChatMessage, ChatPreview, ChatType};
+use domain::chat::notifications::{
+    ChatSettings, NewNotification, Notification, NotificationCursor, NotificationType,
+    UpdateChatSettings,
+};
 use domain::chat::repository::{
     ChatCursor, ChatRepository, ConfirmAttachmentInput, MessageCursor, MessageDirection,
     MessageReaction, NewMessage, NewPendingAttachment,
@@ -1066,6 +1070,237 @@ impl ChatRepository for PostgresChatRepository {
         .map_err(|e| DomainError::Internal(e.to_string()))?;
 
         Ok(participants.into_iter().map(|(id,)| id).collect())
+    }
+
+    async fn list_notifications(
+        &self,
+        user_id: Uuid,
+        cursor: Option<NotificationCursor>,
+        limit: i64,
+    ) -> DomainResult<Vec<Notification>> {
+        let page_size = limit.clamp(1, 50);
+        let cursor_ts = cursor.as_ref().map(|c| c.created_at);
+        let cursor_id = cursor.as_ref().map(|c| c.id);
+
+        let rows = sqlx::query_as::<
+            _,
+            (
+                Uuid,
+                Uuid,
+                String,
+                serde_json::Value,
+                bool,
+                Option<DateTime<Utc>>,
+                DateTime<Utc>,
+            ),
+        >(
+            r#"
+            SELECT id, user_id, type::text, data, is_read, read_at, created_at
+            FROM notifications
+            WHERE user_id = $1
+              AND (
+                  $2::timestamptz IS NULL
+                  OR (created_at, id) < ($2::timestamptz, $3::uuid)
+              )
+            ORDER BY created_at DESC, id DESC
+            LIMIT $4
+            "#,
+        )
+        .bind(user_id)
+        .bind(cursor_ts)
+        .bind(cursor_id.unwrap_or_else(Uuid::nil))
+        .bind(page_size)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        rows.into_iter()
+            .map(
+                |(id, user_id, notification_type, data, is_read, read_at, created_at)| {
+                    let nt =
+                        NotificationType::from_db_str(&notification_type).ok_or_else(|| {
+                            DomainError::Internal(format!(
+                                "invalid notification type: {notification_type}"
+                            ))
+                        })?;
+                    Ok(Notification {
+                        id,
+                        user_id,
+                        notification_type: nt,
+                        data,
+                        is_read,
+                        read_at,
+                        created_at,
+                    })
+                },
+            )
+            .collect()
+    }
+
+    async fn create_notification(
+        &self,
+        notification: NewNotification,
+    ) -> DomainResult<Notification> {
+        let row = sqlx::query_as::<
+            _,
+            (
+                Uuid,
+                Uuid,
+                String,
+                serde_json::Value,
+                bool,
+                Option<DateTime<Utc>>,
+                DateTime<Utc>,
+            ),
+        >(
+            r#"
+            INSERT INTO notifications (user_id, type, data)
+            VALUES ($1, $2::notification_type, $3)
+            RETURNING id, user_id, type::text, data, is_read, read_at, created_at
+            "#,
+        )
+        .bind(notification.user_id)
+        .bind(notification.notification_type.as_db_str())
+        .bind(notification.data)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        let nt = NotificationType::from_db_str(&row.2)
+            .ok_or_else(|| DomainError::Internal("invalid notification type".to_string()))?;
+
+        Ok(Notification {
+            id: row.0,
+            user_id: row.1,
+            notification_type: nt,
+            data: row.3,
+            is_read: row.4,
+            read_at: row.5,
+            created_at: row.6,
+        })
+    }
+
+    async fn mark_notification_read(
+        &self,
+        user_id: Uuid,
+        notification_id: Uuid,
+    ) -> DomainResult<()> {
+        let result = sqlx::query(
+            r#"
+            UPDATE notifications
+            SET is_read = true, read_at = NOW()
+            WHERE id = $1 AND user_id = $2 AND is_read = false
+            "#,
+        )
+        .bind(notification_id)
+        .bind(user_id)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        if result.rows_affected() == 0 {
+            return Err(DomainError::NotFound(
+                "notification not found or already read".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    async fn mark_all_notifications_read(&self, user_id: Uuid) -> DomainResult<i32> {
+        let count = sqlx::query_scalar::<_, i32>(
+            r#"
+            UPDATE notifications
+            SET is_read = true, read_at = NOW()
+            WHERE user_id = $1 AND is_read = false
+            RETURNING COUNT(*)
+            "#,
+        )
+        .bind(user_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        Ok(count)
+    }
+
+    async fn delete_read_notifications(&self, user_id: Uuid) -> DomainResult<i32> {
+        let count = sqlx::query_scalar::<_, i32>(
+            r#"
+            DELETE FROM notifications
+            WHERE user_id = $1 AND is_read = true
+            RETURNING COUNT(*)
+            "#,
+        )
+        .bind(user_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        Ok(count)
+    }
+
+    async fn get_chat_settings(
+        &self,
+        user_id: Uuid,
+        chat_id: Uuid,
+    ) -> DomainResult<Option<ChatSettings>> {
+        let row = sqlx::query_as::<_, (bool, Option<DateTime<Utc>>, bool, i32, bool)>(
+            r#"
+            SELECT is_muted, muted_until, is_pinned, pin_order, is_archived
+            FROM chat_settings
+            WHERE user_id = $1 AND chat_id = $2
+            "#,
+        )
+        .bind(user_id)
+        .bind(chat_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        Ok(row.map(
+            |(is_muted, muted_until, is_pinned, pin_order, is_archived)| ChatSettings {
+                is_muted,
+                muted_until,
+                is_pinned,
+                pin_order,
+                is_archived,
+            },
+        ))
+    }
+
+    async fn update_chat_settings(
+        &self,
+        user_id: Uuid,
+        chat_id: Uuid,
+        settings: UpdateChatSettings,
+    ) -> DomainResult<ChatSettings> {
+        sqlx::query(
+            r#"
+            INSERT INTO chat_settings (user_id, chat_id, is_muted, muted_until, is_pinned, pin_order, is_archived)
+            VALUES ($1, $2, COALESCE($3, FALSE), $4, COALESCE($5, FALSE), COALESCE($6, 0), COALESCE($7, FALSE))
+            ON CONFLICT (user_id, chat_id) DO UPDATE SET
+                is_muted = COALESCE($3, chat_settings.is_muted),
+                muted_until = COALESCE($4, chat_settings.muted_until),
+                is_pinned = COALESCE($5, chat_settings.is_pinned),
+                pin_order = COALESCE($6, chat_settings.pin_order),
+                is_archived = COALESCE($7, chat_settings.is_archived),
+                updated_at = NOW()
+            "#,
+        )
+        .bind(user_id)
+        .bind(chat_id)
+        .bind(settings.is_muted)
+        .bind(settings.muted_until)
+        .bind(settings.is_pinned)
+        .bind(settings.pin_order)
+        .bind(settings.is_archived)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        self.get_chat_settings(user_id, chat_id)
+            .await?
+            .ok_or_else(|| DomainError::NotFound("chat settings not found".to_string()))
     }
 }
 

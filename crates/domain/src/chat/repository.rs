@@ -1,4 +1,7 @@
 use super::entity::{Chat, ChatMessage, ChatPreview, PendingAttachment};
+use super::notifications::{
+    ChatSettings, NewNotification, Notification, NotificationCursor, UpdateChatSettings,
+};
 use chrono::{DateTime, Utc};
 use shared::error::DomainResult;
 use uuid::Uuid;
@@ -161,4 +164,39 @@ pub trait ChatRepository: Send + Sync {
     async fn delete_message(&self, user_id: Uuid, message_id: Uuid) -> DomainResult<()>;
 
     async fn get_chat_participants(&self, chat_id: Uuid) -> DomainResult<Vec<Uuid>>;
+
+    async fn list_notifications(
+        &self,
+        user_id: Uuid,
+        cursor: Option<NotificationCursor>,
+        limit: i64,
+    ) -> DomainResult<Vec<Notification>>;
+
+    async fn create_notification(
+        &self,
+        notification: NewNotification,
+    ) -> DomainResult<Notification>;
+
+    async fn mark_notification_read(
+        &self,
+        user_id: Uuid,
+        notification_id: Uuid,
+    ) -> DomainResult<()>;
+
+    async fn mark_all_notifications_read(&self, user_id: Uuid) -> DomainResult<i32>;
+
+    async fn delete_read_notifications(&self, user_id: Uuid) -> DomainResult<i32>;
+
+    async fn get_chat_settings(
+        &self,
+        user_id: Uuid,
+        chat_id: Uuid,
+    ) -> DomainResult<Option<ChatSettings>>;
+
+    async fn update_chat_settings(
+        &self,
+        user_id: Uuid,
+        chat_id: Uuid,
+        settings: UpdateChatSettings,
+    ) -> DomainResult<ChatSettings>;
 }

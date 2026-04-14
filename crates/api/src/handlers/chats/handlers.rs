@@ -6,6 +6,7 @@ use axum::{
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use domain::chat::entity::{Chat, ChatMessage, ChatPreview};
+use domain::chat::notifications::{Notification, NotificationCursor, UpdateChatSettings};
 use domain::chat::repository::{
     ChatCursor, ChatRepository, MessageCursor, MessageDirection, NewMessage,
 };
@@ -16,12 +17,14 @@ use uuid::Uuid;
 
 use crate::error::ApiError;
 use crate::handlers::chats::dto::{
-    AddReactionRequest, ChatCursorDto, ChatPreviewResponse, ChatResponse, CreateChatRequest,
-    DeleteChatResponse, DeleteMessageResponse, EditMessageRequest, EditMessageResponse,
-    ListChatsQuery, ListChatsResponse, ListMessagesQuery, ListMessagesResponse,
-    MarkMessagesReadRequest, MarkMessagesReadResponse, MessageCursorDto, MessageResponse,
-    ReactionResponse, RemoveReactionResponse, SendMessageRequest, UpdateChatRequest,
-    UpdateChatResponse,
+    AddReactionRequest, ChatCursorDto, ChatPreviewResponse, ChatResponse, ChatSettingsResponse,
+    CreateChatRequest, DeleteChatResponse, DeleteMessageResponse, DeleteReadNotificationsResponse,
+    EditMessageRequest, EditMessageResponse, ListChatsQuery, ListChatsResponse, ListMessagesQuery,
+    ListMessagesResponse, ListNotificationsQuery, ListNotificationsResponse,
+    MarkAllNotificationsReadResponse, MarkMessagesReadRequest, MarkMessagesReadResponse,
+    MarkNotificationReadResponse, MessageCursorDto, MessageResponse, NotificationCursorDto,
+    NotificationResponse, ReactionResponse, RemoveReactionResponse, SendMessageRequest,
+    UpdateChatRequest, UpdateChatResponse, UpdateChatSettingsRequest,
 };
 use crate::middleware::auth::AuthenticatedUser;
 use infrastructure::repositories::chat::PostgresChatRepository;
@@ -582,4 +585,153 @@ pub async fn delete_message(
 
     let response = DeleteMessageResponse { deleted: true };
     Ok((StatusCode::OK, Json(response)).into_response())
+}
+
+pub async fn list_notifications(
+    State(state): State<ChatsState>,
+    Extension(auth): Extension<AuthenticatedUser>,
+    Query(query): Query<ListNotificationsQuery>,
+) -> Result<Response, ApiError> {
+    let limit = query.limit.unwrap_or(20).clamp(1, 50);
+    let decoded_cursor = decode_notification_cursor(query.cursor.as_deref())?;
+    let fetch_limit = limit + 1;
+
+    let mut items = state
+        .chat_repo
+        .list_notifications(auth.user_id, decoded_cursor, fetch_limit)
+        .await?;
+
+    let has_more = items.len() as i64 > limit;
+    if has_more {
+        items.truncate(limit as usize);
+    }
+
+    let next_cursor = items.last().map(build_notification_cursor).transpose()?;
+
+    let response = ListNotificationsResponse {
+        items: items.into_iter().map(notification_to_response).collect(),
+        next_cursor,
+        has_more,
+    };
+
+    Ok((StatusCode::OK, Json(response)).into_response())
+}
+
+pub async fn mark_notification_read(
+    State(state): State<ChatsState>,
+    Extension(auth): Extension<AuthenticatedUser>,
+    Path(notification_id): Path<Uuid>,
+) -> Result<Response, ApiError> {
+    state
+        .chat_repo
+        .mark_notification_read(auth.user_id, notification_id)
+        .await?;
+
+    let response = MarkNotificationReadResponse { updated: true };
+    Ok((StatusCode::OK, Json(response)).into_response())
+}
+
+pub async fn mark_all_notifications_read(
+    State(state): State<ChatsState>,
+    Extension(auth): Extension<AuthenticatedUser>,
+) -> Result<Response, ApiError> {
+    let count = state
+        .chat_repo
+        .mark_all_notifications_read(auth.user_id)
+        .await?;
+
+    let response = MarkAllNotificationsReadResponse {
+        updated_count: count,
+    };
+    Ok((StatusCode::OK, Json(response)).into_response())
+}
+
+pub async fn delete_read_notifications(
+    State(state): State<ChatsState>,
+    Extension(auth): Extension<AuthenticatedUser>,
+) -> Result<Response, ApiError> {
+    let count = state
+        .chat_repo
+        .delete_read_notifications(auth.user_id)
+        .await?;
+
+    let response = DeleteReadNotificationsResponse {
+        deleted_count: count,
+    };
+    Ok((StatusCode::OK, Json(response)).into_response())
+}
+
+pub async fn update_chat_settings(
+    State(state): State<ChatsState>,
+    Extension(auth): Extension<AuthenticatedUser>,
+    Path(chat_id): Path<Uuid>,
+    Json(req): Json<UpdateChatSettingsRequest>,
+) -> Result<Response, ApiError> {
+    state
+        .chat_repo
+        .verify_participant(auth.user_id, chat_id)
+        .await?;
+
+    let settings = state
+        .chat_repo
+        .update_chat_settings(
+            auth.user_id,
+            chat_id,
+            UpdateChatSettings {
+                is_muted: req.is_muted,
+                muted_until: req.muted_until,
+                is_pinned: req.is_pinned,
+                pin_order: req.pin_order,
+                is_archived: req.is_archived,
+            },
+        )
+        .await?;
+
+    let response = ChatSettingsResponse {
+        is_muted: settings.is_muted,
+        muted_until: settings.muted_until,
+        is_pinned: settings.is_pinned,
+        pin_order: settings.pin_order,
+        is_archived: settings.is_archived,
+    };
+    Ok((StatusCode::OK, Json(response)).into_response())
+}
+
+fn decode_notification_cursor(raw: Option<&str>) -> Result<Option<NotificationCursor>, ApiError> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+
+    let decoded = URL_SAFE_NO_PAD
+        .decode(raw)
+        .map_err(|_| DomainError::Validation("invalid notification cursor encoding".to_string()))?;
+    let dto: NotificationCursorDto = serde_json::from_slice(&decoded)
+        .map_err(|_| DomainError::Validation("invalid notification cursor payload".to_string()))?;
+
+    Ok(Some(NotificationCursor {
+        created_at: dto.created_at,
+        id: dto.id,
+    }))
+}
+
+fn build_notification_cursor(item: &Notification) -> Result<String, ApiError> {
+    let dto = NotificationCursorDto {
+        created_at: item.created_at,
+        id: item.id,
+    };
+    let encoded = serde_json::to_vec(&dto).map_err(|e| {
+        DomainError::Internal(format!("failed to serialize notification cursor: {e}"))
+    })?;
+    Ok(URL_SAFE_NO_PAD.encode(encoded))
+}
+
+fn notification_to_response(notification: Notification) -> NotificationResponse {
+    NotificationResponse {
+        id: notification.id,
+        notification_type: notification.notification_type.as_db_str().to_string(),
+        data: notification.data,
+        is_read: notification.is_read,
+        read_at: notification.read_at,
+        created_at: notification.created_at,
+    }
 }

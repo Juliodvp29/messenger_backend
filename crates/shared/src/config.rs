@@ -18,6 +18,7 @@ pub struct Config {
     pub s3: S3Config,
     pub smtp: SmtpConfig,
     pub sms: SmsConfig,
+    pub push: PushConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -70,6 +71,15 @@ pub struct SmsConfig {
     pub provider: String,
     pub api_key: String,
     pub sender_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PushConfig {
+    pub fcm_api_key: Option<String>,
+    pub apns_key_path: Option<String>,
+    pub apns_key_id: Option<String>,
+    pub apns_team_id: Option<String>,
+    pub apns_bundle_id: String,
 }
 
 impl Config {
