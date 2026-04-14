@@ -11,8 +11,11 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
+pub type WsConnection = Arc<Mutex<tokio::sync::mpsc::Sender<String>>>;
+pub type WsConnections = DashMap<Uuid, Vec<WsConnection>>;
+
 pub struct WsState {
-    pub connections: Arc<DashMap<Uuid, Vec<Arc<Mutex<tokio::sync::mpsc::Sender<String>>>>>>,
+    pub connections: Arc<WsConnections>,
     pub redis: ConnectionManager,
     pub redis_url: String,
     pub user_repo: Arc<PostgresUserRepository>,

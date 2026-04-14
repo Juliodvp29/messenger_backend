@@ -43,9 +43,7 @@ pub async fn ws_handler(
         }
     };
 
-    ws.on_upgrade(move |socket| handle_socket(socket, user_id, state.ws_state.clone()));
-
-    Ok(())
+    Ok(ws.on_upgrade(move |socket| handle_socket(socket, user_id, state.ws_state.clone())))
 }
 
 async fn handle_socket(socket: WebSocket, user_id: Uuid, ws_state: Arc<WsState>) {
@@ -54,7 +52,7 @@ async fn handle_socket(socket: WebSocket, user_id: Uuid, ws_state: Arc<WsState>)
     let (tx, mut rx) = mpsc::channel::<String>(100);
 
     {
-        let mut user_connections = ws_state.connections.entry(user_id).or_insert_with(Vec::new);
+        let mut user_connections = ws_state.connections.entry(user_id).or_default();
         user_connections.push(Arc::new(Mutex::new(tx.clone())));
     }
 
@@ -228,7 +226,6 @@ async fn handle_client_message(
         WsClientMessage::SyncRequest { since } => {
             let chat_repo = ws_state.chat_repo.clone();
             let tx = tx.clone();
-            let user_id = user_id;
 
             tokio::spawn(async move {
                 if let Some(since) = since {
