@@ -9,11 +9,16 @@ on:
 env:
   CARGO_TERM_COLOR: always
   APP_ENV: development
-  # No need for real secrets in CI, just dummy values for validation
-  JWT__SECRET: abcdefghijklmnopqrstuvwxyz1234567890abcdefghijklmnopqrstuvwxyz123
-  JWT__REFRESH_SECRET: abcdefghijklmnopqrstuvwxyz1234567890abcdefghijklmnopqrstuvwxyz123
-  JWT__ACCESS_TTL_SECONDS: 900
-  JWT__REFRESH_TTL_SECONDS: 2592000
+  JWT__PRIVATE_KEY: |
+    -----BEGIN PRIVATE KEY-----
+    MC4CAQAwBQYDK2VwBCIEIPWCeU76Q422lF1aq5mjqE/nP/o8zEhF6gXX6Mzk9n+g
+    -----END PRIVATE KEY-----
+  JWT__PUBLIC_KEY: |
+    -----BEGIN PUBLIC KEY-----
+    MCowBQYDK2VwAyEA0IgiJOLeGDwumzkm+wi82nP7wvmbnaoWKmNNHMaq/Mw=
+    -----END PUBLIC KEY-----
+  JWT__ACCESS_TTL_SECONDS: 3600
+  JWT__REFRESH_TTL_SECONDS: 604800
   SERVER__HOST: 0.0.0.0
   SERVER__PORT: 3000
   SERVER__CORS_ORIGINS: "*"

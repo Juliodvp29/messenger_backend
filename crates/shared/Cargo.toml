@@ -17,3 +17,4 @@ config.workspace = true
 uuid.workspace = true
 chrono.workspace = true
 validator.workspace = true
+dotenvy.workspace = true

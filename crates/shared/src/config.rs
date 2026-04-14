@@ -81,3 +81,17 @@ impl Config {
         settings.try_deserialize()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_config_load() {
+        let _ = dotenvy::dotenv();
+        // En CI o local con .env, esto debería cargar sin errores
+        // Si faltan variables requeridas, fallará
+        let config = Config::load();
+        assert!(config.is_ok(), "Config load failed: {:?}", config.err());
+    }
+}
