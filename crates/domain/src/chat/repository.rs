@@ -159,4 +159,6 @@ pub trait ChatRepository: Send + Sync {
     ) -> DomainResult<ChatMessage>;
 
     async fn delete_message(&self, user_id: Uuid, message_id: Uuid) -> DomainResult<()>;
+
+    async fn get_chat_participants(&self, chat_id: Uuid) -> DomainResult<Vec<Uuid>>;
 }

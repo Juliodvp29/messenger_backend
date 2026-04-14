@@ -33,3 +33,6 @@ thiserror.workspace = true
 rand.workspace = true
 sqlx.workspace = true
 aws-sdk-s3.workspace = true
+tokio-tungstenite = "0.24"
+futures-util = "0.3"
+dashmap = "6"

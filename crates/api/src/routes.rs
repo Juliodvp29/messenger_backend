@@ -15,6 +15,7 @@ use crate::handlers::chats::{
 use crate::handlers::keys::{
     KeysState, get_fingerprint, get_key_bundle, get_my_prekey_count, upload_keys, upload_prekeys,
 };
+use crate::handlers::ws::{WsState, ws_handler};
 use crate::middleware::auth::{AuthMiddlewareState, auth_middleware};
 use crate::services::jwt::JwtService;
 use crate::services::otp::OtpService;
@@ -25,6 +26,12 @@ use infrastructure::repositories::user::PostgresUserRepository;
 use redis::aio::ConnectionManager;
 use shared::config::Config;
 use std::sync::Arc;
+
+#[derive(Clone)]
+pub struct WsRouterState {
+    pub jwt_service: Arc<JwtService>,
+    pub ws_state: Arc<WsState>,
+}
 
 pub fn create_router(
     config: &Config,
@@ -69,6 +76,19 @@ pub fn create_router(
     let attachments_state = AttachmentsState {
         chat_repo: chat_repo.clone(),
         storage: Arc::new(S3StorageService::new(&config.s3)),
+    };
+
+    let ws_state = Arc::new(WsState {
+        connections: Arc::new(dashmap::DashMap::new()),
+        redis: redis_manager.clone(),
+        redis_url: config.redis.url.clone(),
+        user_repo: user_repo.clone(),
+        chat_repo: chat_repo.clone(),
+    });
+
+    let ws_router_state = WsRouterState {
+        jwt_service: jwt_service.clone(),
+        ws_state: ws_state.clone(),
     };
 
     let protected_auth_routes = Router::new()
@@ -129,7 +149,11 @@ pub fn create_router(
         ))
         .with_state(attachments_state);
 
-    Router::new()
+    let ws_routes = Router::new()
+        .route("/ws", get(ws_handler))
+        .with_state(ws_router_state);
+
+    let public_routes = Router::new()
         .route("/health", get(health))
         .route("/auth/register", post(register))
         .route("/auth/verify-phone", post(verify_phone))
@@ -138,7 +162,10 @@ pub fn create_router(
         .route("/auth/recover", post(recover))
         .route("/auth/recover/verify", post(recover_verify))
         .route("/auth/2fa/verify", post(two_fa_verify))
-        .route("/auth/refresh", post(refresh))
+        .route("/auth/refresh", post(refresh));
+
+    public_routes
+        .merge(ws_routes)
         .merge(protected_auth_routes)
         .merge(protected_keys_routes)
         .merge(protected_chat_routes)

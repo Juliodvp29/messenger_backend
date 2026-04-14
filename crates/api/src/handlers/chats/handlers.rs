@@ -134,7 +134,7 @@ pub async fn send_message(
         )
         .await?;
 
-    publish_message_event(&state, &message).await?;
+    publish_message_event(&state, &message, auth.user_id).await?;
 
     Ok((StatusCode::CREATED, Json(message_to_response(message))).into_response())
 }
@@ -284,7 +284,11 @@ fn build_message_cursor(item: &ChatMessage) -> Result<String, ApiError> {
     Ok(URL_SAFE_NO_PAD.encode(encoded))
 }
 
-async fn publish_message_event(state: &ChatsState, message: &ChatMessage) -> Result<(), ApiError> {
+async fn publish_message_event(
+    state: &ChatsState,
+    message: &ChatMessage,
+    sender_id: Uuid,
+) -> Result<(), ApiError> {
     let mut redis = state.redis.clone();
     let channel = format!("chat:{}:events", message.chat_id);
     let payload = serde_json::json!({
@@ -300,6 +304,37 @@ async fn publish_message_event(state: &ChatsState, message: &ChatMessage) -> Res
         .publish(channel, payload)
         .await
         .map_err(|e| DomainError::Internal(format!("failed to publish message event: {e}")))?;
+
+    let participants = state
+        .chat_repo
+        .get_chat_participants(message.chat_id)
+        .await
+        .map_err(|e| DomainError::Internal(format!("failed to get participants: {e}")))?;
+
+    for participant_id in participants {
+        if participant_id != sender_id {
+            let user_channel = format!("user:{}:events", participant_id);
+            let user_payload = serde_json::json!({
+                "type": "new_message",
+                "payload": {
+                    "chat_id": message.chat_id,
+                    "message_id": message.id,
+                    "sender_id": message.sender_id,
+                    "content_encrypted": message.content_encrypted,
+                    "content_iv": message.content_iv,
+                    "message_type": message.message_type,
+                },
+                "timestamp": message.created_at.to_rfc3339(),
+            })
+            .to_string();
+
+            let _: i64 = redis
+                .publish(user_channel, user_payload)
+                .await
+                .map_err(|e| DomainError::Internal(format!("failed to publish user event: {e}")))?;
+        }
+    }
+
     Ok(())
 }
 
