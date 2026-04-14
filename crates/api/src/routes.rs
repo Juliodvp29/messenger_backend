@@ -131,8 +131,8 @@ pub fn create_router(
             post(add_reaction),
         )
         .route(
-            "/chats/:id/messages/:message_id/reactions/remove",
-            post(remove_reaction),
+            "/chats/:id/messages/:message_id/reactions/:emoji",
+            delete(remove_reaction),
         )
         .route_layer(middleware::from_fn_with_state(
             auth_middleware_state.clone(),

@@ -255,8 +255,9 @@ cp .env.example .env
 # 3. Levantar infraestructura
 make dev
 
-# 4. Aplicar migraciones pendientes (si hay)
-sqlx migrate run --database-url $DATABASE__URL
+# 4. Aplicar migraciones pendientes
+# Nota: La característica 'migrate' de sqlx debe estar habilitada en el workspace
+sqlx migrate run --database-url postgres://messenger:messenger_secret@localhost:5434/messenger_dev
 
 # 5. Ejecutar la API
 cargo run -p api
