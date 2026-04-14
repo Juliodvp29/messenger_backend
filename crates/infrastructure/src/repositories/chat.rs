@@ -1051,6 +1051,22 @@ impl ChatRepository for PostgresChatRepository {
 
         Ok(())
     }
+
+    async fn get_chat_participants(&self, chat_id: Uuid) -> DomainResult<Vec<Uuid>> {
+        let participants = sqlx::query_as::<_, (Uuid,)>(
+            r#"
+            SELECT user_id
+            FROM chat_participants
+            WHERE chat_id = $1 AND left_at IS NULL
+            "#,
+        )
+        .bind(chat_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        Ok(participants.into_iter().map(|(id,)| id).collect())
+    }
 }
 
 async fn ensure_active_membership(
