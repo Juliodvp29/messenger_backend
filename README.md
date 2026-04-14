@@ -12,8 +12,8 @@ Backend modular en Rust para una aplicación de mensajería estilo WhatsApp/Tele
 | 02 | Base de Datos y Migraciones | ✅ Completado |
 | 03 | Autenticación y Seguridad | ✅ Completado |
 | 04 | Cifrado E2E | ✅ Completado |
-| 05 | Chats y Mensajes | ⏳ Pendiente |
-| 06 | Tiempo Real (WebSockets) | ⏳ Pendiente |
+| 05 | Chats y Mensajes | ✅ Completado |
+| 06 | Tiempo Real (WebSockets) | ✅ Completado |
 | 07-13 | Stories, Notificaciones, etc. | ⏳ Pendiente |
 
 ## Arquitectura
@@ -79,6 +79,95 @@ Todos los endpoints requieren formato JSON (`Content-Type: application/json`).
 | POST | `/auth/2fa/setup/verify` | Verifica código TOTP | Bearer |
 | POST | `/auth/2fa/verify` | Verifica TOTP después de login | No |
 | GET | `/health` | Health check | No |
+
+## Endpoints — Fase 05 (Chats y Mensajes)
+
+Gestión de conversaciones y mensajería con contenido cifrado E2E.
+
+| Método | Endpoint | Descripción | Auth |
+|--------|----------|-----------|------|
+| POST | `/chats` | Crear chat privado o grupal | Bearer |
+| GET | `/chats` | Listar chats del usuario (paginado) | Bearer |
+| GET | `/chats/:id` | Obtener chat por ID | Bearer |
+| PATCH | `/chats/:id` | Actualizar chat (nombre, avatar) | Bearer |
+| DELETE | `/chats/:id` | Eliminar chat | Bearer |
+| POST | `/chats/:id/messages` | Enviar mensaje | Bearer |
+| GET | `/chats/:id/messages` | Listar mensajes (paginado) | Bearer |
+| PATCH | `/chats/:id/messages/:msg_id` | Editar mensaje | Bearer |
+| DELETE | `/chats/:id/messages/:msg_id` | Eliminar mensaje | Bearer |
+| POST | `/chats/:id/messages/read` | Marcar mensajes como leídos | Bearer |
+| POST | `/chats/:id/messages/:msg_id/reactions` | Añadir reacción | Bearer |
+| DELETE | `/chats/:id/messages/:msg_id/reactions/:emoji` | Eliminar reacción | Bearer |
+| POST | `/attachments/upload-url` | Generar URL prefirmada para upload | Bearer |
+| POST | `/attachments/confirm` | Confirmar attachment subido | Bearer |
+
+### Paginación de Mensajes
+
+Los endpoints de listar mensajes usan paginación por cursor:
+
+```bash
+# Obtener mensajes (más recientes primero)
+curl "http://localhost:3000/chats/{chat_id}/messages?limit=50" \
+  -H "Authorization: Bearer $TOKEN"
+
+# Obtener mensajes anteriores (before cursor)
+curl "http://localhost:3000/chats/{chat_id}/messages?cursor={cursor}&direction=before&limit=50" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### Envío de Mensajes Cifrados
+
+Los mensajes se envían cifrados (el servidor nunca los desencripta):
+
+```bash
+curl -X POST http://localhost:3000/chats/{chat_id}/messages \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content_encrypted":"BASE64_AES_GCM_CIPHERTEXT",
+    "content_iv":"BASE64_12_BYTES",
+    "message_type":"text"
+  }'
+```
+
+## Endpoints — Fase 06 (Tiempo Real)
+
+WebSocket para eventos en tiempo real.
+
+| Método | Endpoint | Descripción | Auth |
+|--------|----------|-----------|------|
+| GET | `/ws?token={jwt}` | Upgrade a WebSocket | Bearer (JWT) |
+
+### Eventos WebSocket
+
+El servidor envía eventos JSON por el socket:
+
+```json
+{ "type": "new_message", "payload": {...}, "timestamp": "..." }
+{ "type": "typing_start", "payload": {"chat_id": "...", "user_id": "..."}, "timestamp": "..." }
+{ "type": "typing_stop", "payload": {...}, "timestamp": "..." }
+{ "type": "messages_read", "payload": {...}, "timestamp": "..." }
+{ "type": "user_online", "payload": {"user_id": "..."}, "timestamp": "..." }
+{ "type": "user_offline", "payload": {"user_id": "..."}, "timestamp": "..." }
+```
+
+### Mensajes del Cliente
+
+El cliente envía por WebSocket:
+
+```json
+{ "type": "typing_start", "payload": {"chat_id": "..."} }
+{ "type": "typing_stop", "payload": {"chat_id": "..."} }
+{ "type": "sync_request", "payload": {"since": "2024-01-15T10:30:00Z"} }
+```
+
+### Redis Pub/Sub
+
+Canales usados para distribución entre instancias:
+
+- `user:{user_id}:events` ��� Eventos dirigidos a un usuario
+- `chat:{chat_id}:events` — Eventos de un chat específico
+- `presence:{user_id}` — Clave de presencia (TTL 65s)
 
 ## Endpoints — Fase 04 (Cifrado E2E)
 
