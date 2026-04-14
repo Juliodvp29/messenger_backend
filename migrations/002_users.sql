@@ -20,8 +20,7 @@ CREATE TABLE users (
 
 CREATE TRIGGER users_updated_at
     BEFORE UPDATE ON users
-    FOR EACH ROW
-    EXECUTE FUNCTION trigger_set_updated_at();
+    FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
 
 -- Índices users
 CREATE INDEX idx_users_phone       ON users (phone)       WHERE deleted_at IS NULL;
