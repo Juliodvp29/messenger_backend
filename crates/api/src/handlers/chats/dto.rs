@@ -176,3 +176,65 @@ pub struct EditMessageResponse {
 pub struct DeleteMessageResponse {
     pub deleted: bool,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NotificationResponse {
+    pub id: Uuid,
+    pub notification_type: String,
+    pub data: serde_json::Value,
+    pub is_read: bool,
+    pub read_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ListNotificationsQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ListNotificationsResponse {
+    pub items: Vec<NotificationResponse>,
+    pub next_cursor: Option<String>,
+    pub has_more: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NotificationCursorDto {
+    pub created_at: DateTime<Utc>,
+    pub id: Uuid,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MarkNotificationReadResponse {
+    pub updated: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MarkAllNotificationsReadResponse {
+    pub updated_count: i32,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DeleteReadNotificationsResponse {
+    pub deleted_count: i32,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateChatSettingsRequest {
+    pub is_muted: Option<bool>,
+    pub muted_until: Option<DateTime<Utc>>,
+    pub is_pinned: Option<bool>,
+    pub pin_order: Option<i32>,
+    pub is_archived: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ChatSettingsResponse {
+    pub is_muted: bool,
+    pub muted_until: Option<DateTime<Utc>>,
+    pub is_pinned: bool,
+    pub pin_order: i32,
+    pub is_archived: bool,
+}

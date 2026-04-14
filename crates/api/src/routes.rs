@@ -9,8 +9,10 @@ use crate::handlers::auth::{
     register, two_fa_setup, two_fa_setup_verify, two_fa_verify, verify_phone,
 };
 use crate::handlers::chats::{
-    ChatsState, add_reaction, create_chat, delete_chat, delete_message, edit_message, get_chat,
-    list_chats, list_messages, mark_messages_read, remove_reaction, send_message, update_chat,
+    ChatsState, add_reaction, create_chat, delete_chat, delete_message, delete_read_notifications,
+    edit_message, get_chat, list_chats, list_messages, list_notifications,
+    mark_all_notifications_read, mark_messages_read, mark_notification_read, remove_reaction,
+    send_message, update_chat, update_chat_settings,
 };
 use crate::handlers::keys::{
     KeysState, get_fingerprint, get_key_bundle, get_my_prekey_count, upload_keys, upload_prekeys,
@@ -87,6 +89,8 @@ pub fn create_router(
     let story_repo: Arc<dyn StoryRepo> = Arc::new(PostgresStoryRepository::new(db_pool.clone()));
     let stories_state = StoriesState {
         story_repo: story_repo.clone(),
+        chat_repo: chat_repo.clone(),
+        redis: redis_manager.clone(),
     };
 
     let ws_state = Arc::new(WsState {
@@ -145,11 +149,29 @@ pub fn create_router(
             "/chats/:id/messages/:message_id/reactions/:emoji",
             delete(remove_reaction),
         )
+        .route("/chats/:id/settings", patch(update_chat_settings))
         .route_layer(middleware::from_fn_with_state(
             auth_middleware_state.clone(),
             auth_middleware,
         ))
-        .with_state(chats_state);
+        .with_state(chats_state.clone());
+
+    let protected_notification_routes = Router::new()
+        .route("/notifications", get(list_notifications))
+        .route(
+            "/notifications/read-all",
+            patch(mark_all_notifications_read),
+        )
+        .route("/notifications/read", delete(delete_read_notifications))
+        .route(
+            "/notifications/:notification_id",
+            patch(mark_notification_read),
+        )
+        .route_layer(middleware::from_fn_with_state(
+            auth_middleware_state.clone(),
+            auth_middleware,
+        ))
+        .with_state(chats_state.clone());
 
     let protected_attachment_routes = Router::new()
         .route("/attachments/upload-url", post(create_upload_url))
@@ -193,6 +215,7 @@ pub fn create_router(
         .merge(protected_auth_routes)
         .merge(protected_keys_routes)
         .merge(protected_chat_routes)
+        .merge(protected_notification_routes)
         .merge(protected_attachment_routes)
         .merge(protected_story_routes)
         .with_state(auth_state)

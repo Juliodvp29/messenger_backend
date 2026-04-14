@@ -12,6 +12,10 @@ use shared::error::DomainError;
 use uuid::Uuid;
 
 use crate::error::ApiError;
+use crate::services::push::{PRESENCE_KEY_PREFIX, PushNotificationJob, enqueue_push_notification};
+use domain::chat::notifications::{NewNotification, NotificationType};
+use domain::chat::repository::ChatRepository;
+use redis::AsyncCommands;
 
 const VALID_PRIVACY_VALUES: [&str; 5] = [
     "everyone",
@@ -207,6 +211,38 @@ pub async fn view_story(
         .await
         .map_err(|e| ApiError(DomainError::Internal(e.to_string())))?;
 
+    let notification = NewNotification {
+        user_id: story.user_id,
+        notification_type: NotificationType::StoryView,
+        data: serde_json::json!({
+            "story_id": story.id,
+            "viewer_id": auth.user_id,
+        }),
+    };
+
+    if let Err(e) = state.chat_repo.create_notification(notification).await {
+        tracing::error!("Failed to create in-app notification: {}", e);
+    }
+
+    let mut redis = state.redis.clone();
+    let presence_key = format!("{}{}", PRESENCE_KEY_PREFIX, story.user_id);
+    let is_online: bool = redis.exists(&presence_key).await.unwrap_or(false);
+
+    if !is_online {
+        let job = PushNotificationJob {
+            user_id: story.user_id,
+            notification_type: "story_view".to_string(),
+            payload: serde_json::json!({
+                "story_id": story.id,
+                "viewer_id": auth.user_id,
+            }),
+        };
+
+        if let Err(e) = enqueue_push_notification(&mut redis, job).await {
+            tracing::error!("Failed to enqueue push notification: {}", e);
+        }
+    }
+
     Ok(Json(()))
 }
 
@@ -258,9 +294,43 @@ pub async fn react_to_story(
 
     state
         .story_repo
-        .add_reaction(story_id, auth.user_id, req.reaction)
+        .add_reaction(story_id, auth.user_id, req.reaction.clone())
         .await
         .map_err(|e| ApiError(DomainError::Internal(e.to_string())))?;
+
+    let notification = NewNotification {
+        user_id: story.user_id,
+        notification_type: NotificationType::StoryReaction,
+        data: serde_json::json!({
+            "story_id": story.id,
+            "reactor_id": auth.user_id,
+            "reaction": req.reaction,
+        }),
+    };
+
+    if let Err(e) = state.chat_repo.create_notification(notification).await {
+        tracing::error!("Failed to create in-app notification: {}", e);
+    }
+
+    let mut redis = state.redis.clone();
+    let presence_key = format!("{}{}", PRESENCE_KEY_PREFIX, story.user_id);
+    let is_online: bool = redis.exists(&presence_key).await.unwrap_or(false);
+
+    if !is_online {
+        let job = PushNotificationJob {
+            user_id: story.user_id,
+            notification_type: "story_reaction".to_string(),
+            payload: serde_json::json!({
+                "story_id": story.id,
+                "reactor_id": auth.user_id,
+                "reaction": req.reaction,
+            }),
+        };
+
+        if let Err(e) = enqueue_push_notification(&mut redis, job).await {
+            tracing::error!("Failed to enqueue push notification: {}", e);
+        }
+    }
 
     Ok(Json(()))
 }
