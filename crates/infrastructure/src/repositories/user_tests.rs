@@ -1,13 +1,12 @@
 use crate::repositories::user::PostgresUserRepository;
 use domain::user::entity::User;
 use domain::user::repository::UserRepository;
-use domain::user::value_objects::{PhoneNumber, UserId, Username};
+use domain::user::value_objects::{PhoneNumber, Username};
 use sqlx::PgPool;
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn test_create_user(pool: PgPool) -> sqlx::Result<()> {
     let repo = PostgresUserRepository::new(pool.clone());
-    let user_id = UserId(uuid::Uuid::new_v4());
     let phone = PhoneNumber::new("+573001111111".to_string()).unwrap();
 
     let user = User::new(
