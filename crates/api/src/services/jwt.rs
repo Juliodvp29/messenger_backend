@@ -36,7 +36,8 @@ pub struct RefreshSession {
 
 #[derive(Clone)]
 pub struct JwtService {
-    secret: Vec<u8>,
+    encoding_key: EncodingKey,
+    decoding_key: DecodingKey,
     access_ttl: u64,
     refresh_ttl: u64,
     redis: Option<ConnectionManager>,
@@ -44,14 +45,20 @@ pub struct JwtService {
 
 impl JwtService {
     pub fn new(
-        secret: String,
-        _refresh_secret: String,
+        private_key_pem: String,
+        public_key_pem: String,
         access_ttl: u64,
         refresh_ttl: u64,
         redis: Option<ConnectionManager>,
     ) -> Self {
+        let encoding_key =
+            EncodingKey::from_ed_pem(private_key_pem.as_bytes()).expect("Invalid JWT private key");
+        let decoding_key =
+            DecodingKey::from_ed_pem(public_key_pem.as_bytes()).expect("Invalid JWT public key");
+
         Self {
-            secret: secret.into_bytes(),
+            encoding_key,
+            decoding_key,
             access_ttl,
             refresh_ttl,
             redis,
@@ -71,9 +78,9 @@ impl JwtService {
             iat: now,
         };
 
-        let header = Header::new(Algorithm::HS512);
+        let header = Header::new(Algorithm::EdDSA);
 
-        let token = encode(&header, &claims, &EncodingKey::from_secret(&self.secret))
+        let token = encode(&header, &claims, &self.encoding_key)
             .map_err(|e| ServiceError::Internal(e.to_string()))?;
 
         Ok(token)
@@ -88,21 +95,20 @@ impl JwtService {
             iat: now,
         };
 
-        let header = Header::new(Algorithm::HS512);
+        let header = Header::new(Algorithm::EdDSA);
 
-        let token = encode(&header, &claims, &EncodingKey::from_secret(&self.secret))
+        let token = encode(&header, &claims, &self.encoding_key)
             .map_err(|e| ServiceError::Internal(e.to_string()))?;
 
         Ok(token)
     }
 
     pub fn validate_access_token(&self, token: &str) -> Result<AccessClaims, ServiceError> {
-        let mut validation = Validation::new(Algorithm::HS512);
+        let mut validation = Validation::new(Algorithm::EdDSA);
         validation.validate_exp = true;
-        let claims =
-            decode::<AccessClaims>(token, &DecodingKey::from_secret(&self.secret), &validation)
-                .map_err(|e| ServiceError::Unauthorized(e.to_string()))?
-                .claims;
+        let claims = decode::<AccessClaims>(token, &self.decoding_key, &validation)
+            .map_err(|e| ServiceError::Unauthorized(e.to_string()))?
+            .claims;
 
         let now = chrono::Utc::now().timestamp();
         if claims.exp < now {

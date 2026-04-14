@@ -53,21 +53,22 @@ impl KeyRepository for PostgresKeyRepository {
         user_id: Uuid,
         prekeys: Vec<OneTimePrekey>,
     ) -> Result<(), DomainError> {
-        for prekey in prekeys {
-            sqlx::query!(
-                r#"
-                INSERT INTO one_time_prekeys (user_id, key_id, public_key)
-                VALUES ($1, $2, $3)
-                ON CONFLICT (user_id, key_id) DO NOTHING
-                "#,
-                user_id,
-                prekey.id,
-                prekey.key
-            )
-            .execute(&self.pool)
-            .await
-            .map_err(|e| DomainError::Internal(e.to_string()))?;
-        }
+        let ids: Vec<i32> = prekeys.iter().map(|p| p.id).collect();
+        let keys: Vec<String> = prekeys.iter().map(|p| p.key.clone()).collect();
+
+        sqlx::query!(
+            r#"
+            INSERT INTO one_time_prekeys (user_id, key_id, public_key)
+            SELECT $1, * FROM UNNEST($2::int[], $3::text[])
+            ON CONFLICT (user_id, key_id) DO NOTHING
+            "#,
+            user_id,
+            &ids,
+            &keys
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
 
         sqlx::query!(
             r#"

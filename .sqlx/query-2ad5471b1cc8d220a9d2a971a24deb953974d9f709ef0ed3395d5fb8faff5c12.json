@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO one_time_prekeys (user_id, key_id, public_key)\n            SELECT $1, * FROM UNNEST($2::int[], $3::text[])\n            ON CONFLICT (user_id, key_id) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4Array",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2ad5471b1cc8d220a9d2a971a24deb953974d9f709ef0ed3395d5fb8faff5c12"
+}
