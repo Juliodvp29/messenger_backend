@@ -266,7 +266,11 @@ impl UserRepository for PostgresUserRepository {
         Ok(())
     }
 
-    async fn update_last_seen(&self, user_id: &UserId, timestamp: DateTime<Utc>) -> DomainResult<()> {
+    async fn update_last_seen(
+        &self,
+        user_id: &UserId,
+        timestamp: DateTime<Utc>,
+    ) -> DomainResult<()> {
         sqlx::query(
             r#"
             UPDATE users SET last_seen_at = $2 WHERE id = $1 AND deleted_at IS NULL

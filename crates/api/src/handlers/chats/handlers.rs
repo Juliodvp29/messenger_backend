@@ -284,7 +284,11 @@ fn build_message_cursor(item: &ChatMessage) -> Result<String, ApiError> {
     Ok(URL_SAFE_NO_PAD.encode(encoded))
 }
 
-async fn publish_message_event(state: &ChatsState, message: &ChatMessage, sender_id: Uuid) -> Result<(), ApiError> {
+async fn publish_message_event(
+    state: &ChatsState,
+    message: &ChatMessage,
+    sender_id: Uuid,
+) -> Result<(), ApiError> {
     let mut redis = state.redis.clone();
     let channel = format!("chat:{}:events", message.chat_id);
     let payload = serde_json::json!({

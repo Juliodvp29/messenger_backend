@@ -99,7 +99,14 @@ async fn handle_socket(socket: WebSocket, user_id: Uuid, ws_state: Arc<WsState>)
             match msg {
                 Ok(axum::extract::ws::Message::Text(text)) => {
                     if let Ok(client_msg) = serde_json::from_str::<WsClientMessage>(&text) {
-                        handle_client_message(client_msg, &tx, &redis, user_id_for_read, ws_state_clone.clone()).await;
+                        handle_client_message(
+                            client_msg,
+                            &tx,
+                            &redis,
+                            user_id_for_read,
+                            ws_state_clone.clone(),
+                        )
+                        .await;
                     }
                 }
                 Ok(axum::extract::ws::Message::Ping(_)) => {}
@@ -126,7 +133,9 @@ async fn handle_socket(socket: WebSocket, user_id: Uuid, ws_state: Arc<WsState>)
             .await;
 
         let user_id = domain::user::value_objects::UserId(user_id_for_read);
-        let _ = user_repo.update_last_seen(&user_id, chrono::Utc::now()).await;
+        let _ = user_repo
+            .update_last_seen(&user_id, chrono::Utc::now())
+            .await;
 
         tracing::info!("WebSocket disconnected for user {}", user_id_for_read);
     });
@@ -266,7 +275,7 @@ async fn sync_messages_after(
     since: DateTime<Utc>,
 ) -> Result<Vec<serde_json::Value>, ()> {
     use domain::chat::repository::{ChatRepository, MessageDirection};
-    
+
     let chat_previews = chat_repo
         .list_chats_for_user(user_id, None, 50)
         .await
