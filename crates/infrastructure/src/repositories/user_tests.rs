@@ -17,6 +17,7 @@ async fn test_create_user(pool: PgPool) -> sqlx::Result<()> {
     );
 
     repo.create(&user).await.expect("Should create user");
+    let user_id = user.id.clone();
 
     let found = repo.find_by_id(&user_id).await.expect("Should find user");
     assert!(found.is_some());

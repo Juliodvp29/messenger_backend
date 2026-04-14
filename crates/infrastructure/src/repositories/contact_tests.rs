@@ -9,6 +9,14 @@ use sqlx::PgPool;
 async fn test_create_contact(pool: PgPool) -> sqlx::Result<()> {
     let repo = PostgresContactRepository::new(pool.clone());
     let owner_id = UserId(uuid::Uuid::new_v4());
+
+    // Crear el usuario dueño primero para evitar violación de FK
+    sqlx::query("INSERT INTO users (id, phone) VALUES ($1, $2)")
+        .bind(owner_id.0)
+        .bind("+573000000001")
+        .execute(&pool)
+        .await?;
+
     let phone = PhoneNumber::new("+573001111111".to_string()).unwrap();
 
     let contact = Contact::new(owner_id.clone(), phone.clone(), None);
@@ -29,6 +37,13 @@ async fn test_create_contact(pool: PgPool) -> sqlx::Result<()> {
 async fn test_find_all_by_owner(pool: PgPool) -> sqlx::Result<()> {
     let repo = PostgresContactRepository::new(pool.clone());
     let owner_id = UserId(uuid::Uuid::new_v4());
+
+    // Crear el usuario dueño primero para evitar violación de FK
+    sqlx::query("INSERT INTO users (id, phone) VALUES ($1, $2)")
+        .bind(owner_id.0)
+        .bind("+573000000002")
+        .execute(&pool)
+        .await?;
 
     let phone1 = PhoneNumber::new("+573001111111".to_string()).unwrap();
     let phone2 = PhoneNumber::new("+573001222222".to_string()).unwrap();
@@ -56,6 +71,14 @@ async fn test_find_all_by_owner(pool: PgPool) -> sqlx::Result<()> {
 async fn test_update_contact(pool: PgPool) -> sqlx::Result<()> {
     let repo = PostgresContactRepository::new(pool.clone());
     let owner_id = UserId(uuid::Uuid::new_v4());
+
+    // Crear el usuario dueño primero para evitar violación de FK
+    sqlx::query("INSERT INTO users (id, phone) VALUES ($1, $2)")
+        .bind(owner_id.0)
+        .bind("+573000000003")
+        .execute(&pool)
+        .await?;
+
     let phone = PhoneNumber::new("+573001333333".to_string()).unwrap();
 
     let contact = Contact::new(owner_id.clone(), phone.clone(), None);
@@ -84,6 +107,14 @@ async fn test_update_contact(pool: PgPool) -> sqlx::Result<()> {
 async fn test_delete_contact(pool: PgPool) -> sqlx::Result<()> {
     let repo = PostgresContactRepository::new(pool.clone());
     let owner_id = UserId(uuid::Uuid::new_v4());
+
+    // Crear el usuario dueño primero para evitar violación de FK
+    sqlx::query("INSERT INTO users (id, phone) VALUES ($1, $2)")
+        .bind(owner_id.0)
+        .bind("+573000000004")
+        .execute(&pool)
+        .await?;
+
     let phone = PhoneNumber::new("+573001444444".to_string()).unwrap();
 
     let contact = Contact::new(owner_id.clone(), phone.clone(), None);
