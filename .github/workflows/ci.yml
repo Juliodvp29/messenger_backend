@@ -94,5 +94,8 @@ jobs:
       - name: Install sqlx-cli
         run: cargo install sqlx-cli --no-default-features --features postgres
 
+      - name: Run Migrations
+        run: sqlx migrate run --source ./migrations
+
       - name: Run Tests
         run: cargo test --workspace
