@@ -49,6 +49,11 @@ pub struct ViewStoryRequest {
     pub reaction: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ReactToStoryRequest {
+    pub reaction: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct StoryViewResponse {
     pub viewer_id: Uuid,

@@ -17,7 +17,7 @@ use crate::handlers::keys::{
 };
 use crate::handlers::stories::{
     StoriesState, create_story, delete_story, get_story_views, list_my_stories, list_stories,
-    view_story,
+    react_to_story, view_story,
 };
 use crate::handlers::ws::{WsState, ws_handler};
 use crate::middleware::auth::{AuthMiddlewareState, auth_middleware};
@@ -164,6 +164,7 @@ pub fn create_router(
         .route("/stories/my", get(list_my_stories))
         .route("/stories/:id", delete(delete_story))
         .route("/stories/:id/view", post(view_story))
+        .route("/stories/:id/react", post(react_to_story))
         .route("/stories/:id/views", get(get_story_views))
         .route_layer(middleware::from_fn_with_state(
             auth_middleware_state.clone(),

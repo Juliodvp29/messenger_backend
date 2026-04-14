@@ -1,6 +1,6 @@
 use crate::handlers::stories::StoriesState;
 use crate::handlers::stories::dto::{
-    CreateStoryRequest, CreateStoryResponse, StoryViewResponse, StoryWithUserResponse,
+    CreateStoryRequest, CreateStoryResponse, ReactToStoryRequest, StoryViewResponse, StoryWithUserResponse,
     ViewStoryRequest,
 };
 use crate::middleware::auth::AuthenticatedUser;
@@ -187,6 +187,46 @@ pub async fn view_story(
             .await
             .map_err(|e| ApiError(DomainError::Internal(e.to_string())))?;
     }
+
+    Ok(Json(()))
+}
+
+pub async fn react_to_story(
+    State(state): State<StoriesState>,
+    Extension(auth): Extension<AuthenticatedUser>,
+    Path(story_id): Path<Uuid>,
+    Json(req): Json<ReactToStoryRequest>,
+) -> Result<Json<()>, ApiError> {
+    let story = state
+        .story_repo
+        .find_by_id(story_id)
+        .await
+        .map_err(|e| ApiError(DomainError::Internal(e.to_string())))?
+        .ok_or_else(|| ApiError(DomainError::NotFound("Story not found".to_string())))?;
+
+    if story.user_id == auth.user_id {
+        return Err(ApiError(DomainError::Unauthorized(
+            "Cannot react to your own story".to_string(),
+        )));
+    }
+
+    let has_viewed = state
+        .story_repo
+        .has_viewed(story_id, auth.user_id)
+        .await
+        .map_err(|e| ApiError(DomainError::Internal(e.to_string())))?;
+
+    if !has_viewed {
+        return Err(ApiError(DomainError::Validation(
+            "Cannot react to a story you haven't viewed".to_string(),
+        )));
+    }
+
+    state
+        .story_repo
+        .add_reaction(story_id, auth.user_id, req.reaction)
+        .await
+        .map_err(|e| ApiError(DomainError::Internal(e.to_string())))?;
 
     Ok(Json(()))
 }
