@@ -265,6 +265,21 @@ impl UserRepository for PostgresUserRepository {
 
         Ok(())
     }
+
+    async fn update_last_seen(&self, user_id: &UserId, timestamp: DateTime<Utc>) -> DomainResult<()> {
+        sqlx::query(
+            r#"
+            UPDATE users SET last_seen_at = $2 WHERE id = $1 AND deleted_at IS NULL
+            "#,
+        )
+        .bind(user_id.0)
+        .bind(timestamp)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        Ok(())
+    }
 }
 
 fn map_record_to_user(rec: UserRecord) -> DomainResult<User> {

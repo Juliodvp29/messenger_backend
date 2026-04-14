@@ -5,6 +5,7 @@ use axum::{
     },
     response::IntoResponse,
 };
+use domain::user::repository::UserRepository;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use std::sync::Arc;
@@ -88,6 +89,7 @@ async fn handle_socket(socket: WebSocket, user_id: Uuid, ws_state: Arc<WsState>)
     let user_id_for_read = user_id;
     let connections_for_cleanup = ws_state.connections.clone();
     let redis_for_cleanup = redis.clone();
+    let user_repo = ws_state.user_repo.clone();
 
     tokio::spawn(async move {
         while let Some(msg) = read.next().await {
@@ -119,6 +121,9 @@ async fn handle_socket(socket: WebSocket, user_id: Uuid, ws_state: Arc<WsState>)
             .del(format!("presence:{}", user_id_for_read))
             .query_async(&mut redis.clone())
             .await;
+
+        let user_id = domain::user::value_objects::UserId(user_id_for_read);
+        let _ = user_repo.update_last_seen(&user_id, chrono::Utc::now()).await;
 
         tracing::info!("WebSocket disconnected for user {}", user_id_for_read);
     });
@@ -153,12 +158,37 @@ async fn handle_client_message(
                 "timestamp": chrono::Utc::now().to_rfc3339()
             });
 
-            let redis = redis.clone();
+            let redis1 = redis.clone();
+            let redis2 = redis.clone();
             let payload_str = payload.to_string();
+            let chat_id1 = chat_id;
             tokio::spawn(async move {
+                let mut redis = redis1.clone();
                 let _: Result<(), _> = redis::pipe()
-                    .publish(format!("chat:{}:events", chat_id), payload_str)
-                    .query_async(&mut redis.clone())
+                    .publish(format!("chat:{}:events", chat_id1), payload_str)
+                    .query_async(&mut redis)
+                    .await;
+            });
+
+            let user_id_for_timer = user_id;
+            let chat_id_for_timer = chat_id;
+            tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+
+                let payload = json!({
+                    "type": "typing_stop",
+                    "payload": {
+                        "chat_id": chat_id_for_timer,
+                        "user_id": user_id_for_timer
+                    },
+                    "timestamp": chrono::Utc::now().to_rfc3339()
+                });
+
+                let payload_str = payload.to_string();
+                let mut redis = redis2.clone();
+                let _: Result<(), _> = redis::pipe()
+                    .publish(format!("chat:{}:events", chat_id_for_timer), payload_str)
+                    .query_async(&mut redis)
                     .await;
             });
         }
@@ -175,9 +205,10 @@ async fn handle_client_message(
             let redis = redis.clone();
             let payload_str = payload.to_string();
             tokio::spawn(async move {
+                let mut redis = redis.clone();
                 let _: Result<(), _> = redis::pipe()
                     .publish(format!("chat:{}:events", chat_id), payload_str)
-                    .query_async(&mut redis.clone())
+                    .query_async(&mut redis)
                     .await;
             });
         }

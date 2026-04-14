@@ -82,6 +82,7 @@ pub fn create_router(
         connections: Arc::new(dashmap::DashMap::new()),
         redis: redis_manager.clone(),
         redis_url: config.redis.url.clone(),
+        user_repo: user_repo.clone(),
     });
 
     let ws_router_state = WsRouterState {
