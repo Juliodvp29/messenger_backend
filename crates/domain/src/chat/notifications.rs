@@ -59,25 +59,13 @@ pub struct NewNotification {
     pub data: serde_json::Value,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChatSettings {
     pub is_muted: bool,
     pub muted_until: Option<DateTime<Utc>>,
     pub is_pinned: bool,
     pub pin_order: i32,
     pub is_archived: bool,
-}
-
-impl Default for ChatSettings {
-    fn default() -> Self {
-        Self {
-            is_muted: false,
-            muted_until: None,
-            is_pinned: false,
-            pin_order: 0,
-            is_archived: false,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

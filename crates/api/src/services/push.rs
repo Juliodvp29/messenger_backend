@@ -166,15 +166,14 @@ pub async fn push_notification_worker(
                     // if token invalid (400, 410):
                     let is_token_valid = true;
 
-                    if !is_token_valid {
-                        if let Err(e) =
+                    if !is_token_valid
+                        && let Err(e) =
                             sqlx::query("UPDATE user_sessions SET push_token = NULL WHERE id = $1")
                                 .bind(session_id)
                                 .execute(&pool)
                                 .await
-                        {
-                            error!("Failed to remove invalid push token: {}", e);
-                        }
+                    {
+                        error!("Failed to remove invalid push token: {}", e);
                     }
                 }
             }

@@ -120,6 +120,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Rust
         uses: dtolnay/rust-toolchain@nightly
+      
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+      
       - name: Install sqlx-cli
         run: cargo install sqlx-cli --no-default-features --features postgres
 
@@ -127,4 +131,7 @@ jobs:
         run: sqlx migrate run --source ./migrations
 
       - name: Run Tests
+        env:
+          DATABASE_URL: postgres://messenger:messenger_secret@127.0.0.1:5434/messenger_test
+          DATABASE__URL: postgres://messenger:messenger_secret@127.0.0.1:5434/messenger_test
         run: cargo test --workspace

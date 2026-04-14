@@ -353,7 +353,7 @@ async fn publish_message_event(
                 let is_muted = settings.is_muted
                     || settings
                         .muted_until
-                        .map_or(false, |until| until > chrono::Utc::now());
+                        .is_some_and(|until| until > chrono::Utc::now());
 
                 if !is_muted {
                     // 3. Encolar notificación Push
