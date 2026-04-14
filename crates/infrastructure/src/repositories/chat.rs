@@ -3,7 +3,7 @@ use domain::chat::entity::PendingAttachment;
 use domain::chat::entity::{Chat, ChatMessage, ChatPreview, ChatType};
 use domain::chat::repository::{
     ChatCursor, ChatRepository, ConfirmAttachmentInput, MessageCursor, MessageDirection,
-    NewMessage, NewPendingAttachment,
+    NewMessage, NewPendingAttachment, MessageReaction,
 };
 use shared::error::{DomainError, DomainResult};
 use sqlx::PgPool;
@@ -16,6 +16,38 @@ pub struct PostgresChatRepository {
 impl PostgresChatRepository {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
+    }
+}
+
+fn map_message_row(
+    row: (
+        Uuid,
+        Uuid,
+        Option<Uuid>,
+        Option<Uuid>,
+        Option<String>,
+        Option<String>,
+        String,
+        Option<serde_json::Value>,
+        bool,
+        DateTime<Utc>,
+        Option<DateTime<Utc>>,
+        Option<DateTime<Utc>>,
+    ),
+) -> ChatMessage {
+    ChatMessage {
+        id: row.0,
+        chat_id: row.1,
+        sender_id: row.2,
+        reply_to_id: row.3,
+        content_encrypted: row.4,
+        content_iv: row.5,
+        message_type: row.6,
+        metadata: row.7,
+        is_forwarded: row.8,
+        created_at: row.9,
+        edited_at: row.10,
+        deleted_at: row.11,
     }
 }
 
@@ -661,37 +693,358 @@ impl ChatRepository for PostgresChatRepository {
             .map_err(|e| DomainError::Internal(e.to_string()))?;
         Ok(())
     }
-}
 
-fn map_message_row(
-    row: (
-        Uuid,
-        Uuid,
-        Option<Uuid>,
-        Option<Uuid>,
-        Option<String>,
-        Option<String>,
-        String,
-        Option<serde_json::Value>,
-        bool,
-        DateTime<Utc>,
-        Option<DateTime<Utc>>,
-        Option<DateTime<Utc>>,
-    ),
-) -> ChatMessage {
-    ChatMessage {
-        id: row.0,
-        chat_id: row.1,
-        sender_id: row.2,
-        reply_to_id: row.3,
-        content_encrypted: row.4,
-        content_iv: row.5,
-        message_type: row.6,
-        metadata: row.7,
-        is_forwarded: row.8,
-        created_at: row.9,
-        edited_at: row.10,
-        deleted_at: row.11,
+    async fn verify_participant(&self, user_id: Uuid, chat_id: Uuid) -> DomainResult<()> {
+        let exists = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT 1
+            FROM chat_participants cp
+            JOIN chats c ON c.id = cp.chat_id
+            WHERE cp.chat_id = $1
+              AND cp.user_id = $2
+              AND cp.left_at IS NULL
+              AND c.deleted_at IS NULL
+            LIMIT 1
+            "#,
+        )
+        .bind(chat_id)
+        .bind(user_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        if exists.is_none() {
+            return Err(DomainError::NotFound(
+                "chat not found or not a participant".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    async fn verify_message_in_chat(&self, message_id: Uuid, chat_id: Uuid) -> DomainResult<()> {
+        let exists = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT 1
+            FROM messages m
+            WHERE m.id = $1
+              AND m.chat_id = $2
+              AND m.deleted_at IS NULL
+            LIMIT 1
+            "#,
+        )
+        .bind(message_id)
+        .bind(chat_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        if exists.is_none() {
+            return Err(DomainError::NotFound(
+                "message not found or not in chat".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    async fn mark_messages_read(
+        &self,
+        user_id: Uuid,
+        chat_id: Uuid,
+        up_to: DateTime<Utc>,
+    ) -> DomainResult<i32> {
+        let updated_count = sqlx::query_scalar::<_, i32>(
+            r#"
+            SELECT mark_messages_read($1, $2, $3)
+            "#,
+        )
+        .bind(user_id)
+        .bind(chat_id)
+        .bind(up_to)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        Ok(updated_count)
+    }
+
+    async fn add_reaction(
+        &self,
+        message_id: Uuid,
+        user_id: Uuid,
+        reaction: String,
+    ) -> DomainResult<MessageReaction> {
+        let reaction_record = sqlx::query_as::<_, (Uuid, Uuid, Uuid, String, DateTime<Utc>)>(
+            r#"
+            INSERT INTO message_reactions (message_id, user_id, reaction)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (message_id, user_id, reaction) DO NOTHING
+            RETURNING id, message_id, user_id, reaction, created_at
+            "#,
+        )
+        .bind(message_id)
+        .bind(user_id)
+        .bind(&reaction)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        Ok(MessageReaction {
+            id: reaction_record.0,
+            message_id: reaction_record.1,
+            user_id: reaction_record.2,
+            reaction: reaction_record.3,
+            created_at: reaction_record.4,
+        })
+    }
+
+    async fn remove_reaction(
+        &self,
+        message_id: Uuid,
+        user_id: Uuid,
+        reaction: &str,
+    ) -> DomainResult<bool> {
+        let result = sqlx::query(
+            r#"
+            DELETE FROM message_reactions
+            WHERE message_id = $1
+              AND user_id = $2
+              AND reaction = $3
+            "#,
+        )
+        .bind(message_id)
+        .bind(user_id)
+        .bind(reaction)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn update_chat(
+        &self,
+        user_id: Uuid,
+        chat_id: Uuid,
+        name: Option<String>,
+        avatar_url: Option<String>,
+    ) -> DomainResult<Chat> {
+        let (chat_type, current_name, current_avatar, created_by) = sqlx::query_as::<_, (String, Option<String>, Option<String>, Option<Uuid>)>(
+            r#"
+            SELECT c.type::text, c.name, c.avatar_url, c.created_by
+            FROM chats c
+            JOIN chat_participants cp ON cp.chat_id = c.id
+            WHERE c.id = $1
+              AND cp.user_id = $2
+              AND cp.left_at IS NULL
+              AND c.deleted_at IS NULL
+            "#,
+        )
+        .bind(chat_id)
+        .bind(user_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        let new_name = name.or(current_name.clone());
+        let new_avatar = avatar_url.or(current_avatar.clone());
+
+        let (id, updated_at) = sqlx::query_as::<_, (Uuid, DateTime<Utc>)>(
+            r#"
+            UPDATE chats
+            SET name = $3, avatar_url = $4, updated_at = NOW()
+            WHERE id = $1
+            RETURNING id, updated_at
+            "#,
+        )
+        .bind(chat_id)
+        .bind(new_name.clone())
+        .bind(new_avatar.clone())
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        let parsed_type = ChatType::from_db_str(&chat_type)
+            .ok_or_else(|| DomainError::Internal("invalid chat type".to_string()))?;
+
+        Ok(Chat {
+            id,
+            chat_type: parsed_type,
+            name: new_name,
+            avatar_url: new_avatar,
+            created_by,
+            created_at: updated_at,
+        })
+    }
+
+    async fn delete_chat(&self, user_id: Uuid, chat_id: Uuid) -> DomainResult<()> {
+        let chat_exists = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT type::text
+            FROM chats c
+            JOIN chat_participants cp ON cp.chat_id = c.id
+            WHERE c.id = $1
+              AND cp.user_id = $2
+              AND cp.left_at IS NULL
+              AND c.deleted_at IS NULL
+            "#,
+        )
+        .bind(chat_id)
+        .bind(user_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        let chat_type = chat_exists
+            .ok_or_else(|| DomainError::NotFound("chat not found or not a participant".to_string()))?;
+
+        if chat_type == "private" {
+            sqlx::query(
+                r#"
+                UPDATE chat_participants
+                SET left_at = NOW()
+                WHERE chat_id = $1 AND user_id = $2
+                "#,
+            )
+            .bind(chat_id)
+            .bind(user_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DomainError::Internal(e.to_string()))?;
+        } else {
+            let is_owner = sqlx::query_scalar::<_, bool>(
+                r#"
+                SELECT TRUE
+                FROM chat_participants
+                WHERE chat_id = $1 AND user_id = $2 AND role = 'owner'
+                "#,
+            )
+            .bind(chat_id)
+            .bind(user_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+            if is_owner.unwrap_or(false) {
+                sqlx::query(
+                    r#"
+                    UPDATE chats SET deleted_at = NOW() WHERE id = $1
+                    "#,
+                )
+                .bind(chat_id)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| DomainError::Internal(e.to_string()))?;
+            } else {
+                sqlx::query(
+                    r#"
+                    UPDATE chat_participants SET left_at = NOW()
+                    WHERE chat_id = $1 AND user_id = $2
+                    "#,
+                )
+                .bind(chat_id)
+                .bind(user_id)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| DomainError::Internal(e.to_string()))?;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn edit_message(
+        &self,
+        user_id: Uuid,
+        message_id: Uuid,
+        content_encrypted: Option<String>,
+        content_iv: Option<String>,
+    ) -> DomainResult<ChatMessage> {
+        let chat_id = sqlx::query_scalar::<_, Uuid>(
+            r#"
+            SELECT m.chat_id
+            FROM messages m
+            WHERE m.id = $1
+              AND m.sender_id = $2
+              AND m.deleted_at IS NULL
+            "#,
+        )
+        .bind(message_id)
+        .bind(user_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?
+        .ok_or_else(|| DomainError::NotFound("message not found or not authorized".to_string()))?;
+
+        ensure_active_membership_pool(&self.pool, user_id, chat_id).await?;
+
+        if content_encrypted.is_none() && content_iv.is_none() {
+            return Err(DomainError::Validation(
+                "content_encrypted and content_iv are required".to_string(),
+            ));
+        }
+
+        let updated = sqlx::query_as::<
+            _,
+            (
+                Uuid,
+                Uuid,
+                Option<Uuid>,
+                Option<Uuid>,
+                Option<String>,
+                Option<String>,
+                String,
+                Option<serde_json::Value>,
+                bool,
+                DateTime<Utc>,
+                Option<DateTime<Utc>>,
+                Option<DateTime<Utc>>,
+            ),
+        >(
+            r#"
+            UPDATE messages
+            SET content_encrypted = COALESCE($3, content_encrypted),
+                content_iv = COALESCE($4, content_iv),
+                edited_at = NOW()
+            WHERE id = $1
+            RETURNING id, chat_id, sender_id, reply_to_id, content_encrypted, content_iv,
+                      message_type::text, metadata, is_forwarded, created_at, edited_at, deleted_at
+            "#,
+        )
+        .bind(message_id)
+        .bind(user_id)
+        .bind(content_encrypted)
+        .bind(content_iv)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        Ok(map_message_row(updated))
+    }
+
+    async fn delete_message(&self, user_id: Uuid, message_id: Uuid) -> DomainResult<()> {
+        let result = sqlx::query(
+            r#"
+            UPDATE messages
+            SET deleted_at = NOW(),
+                content_encrypted = NULL,
+                content_iv = NULL,
+                message_type = 'deleted'::message_type
+            WHERE id = $1
+              AND sender_id = $2
+              AND deleted_at IS NULL
+            "#,
+        )
+        .bind(message_id)
+        .bind(user_id)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        if result.rows_affected() == 0 {
+            return Err(DomainError::NotFound("message not found or not authorized".to_string()));
+        }
+
+Ok(())
     }
 }
 
