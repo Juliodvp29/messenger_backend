@@ -83,6 +83,14 @@ pub trait StoryRepository: Send + Sync {
         story_id: Uuid,
         viewer_id: Uuid,
     ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>>;
+
+    /// Check if a user has permission to view a story based on its privacy settings.
+    /// Returns true if the viewer is allowed to see the story.
+    async fn can_user_view_story(
+        &self,
+        story_id: Uuid,
+        viewer_id: Uuid,
+    ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>>;
 }
 
 #[async_trait]

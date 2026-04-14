@@ -1,14 +1,13 @@
 use crate::handlers::stories::StoriesState;
 use crate::handlers::stories::dto::{
-    CreateStoryRequest, CreateStoryResponse, ReactToStoryRequest, StoryViewResponse, StoryWithUserResponse,
-    ViewStoryRequest,
+    CreateStoryRequest, CreateStoryResponse, GroupedStoriesResponse, ReactToStoryRequest,
+    StoryViewResponse, StoryWithUserResponse, UserStoryItem,
 };
 use crate::middleware::auth::AuthenticatedUser;
 use axum::{
     Json,
     extract::{Extension, Path, State},
 };
-use domain::stories::repository::{ActiveStoryRepository, StoryRepository};
 use shared::error::DomainError;
 use uuid::Uuid;
 
@@ -66,35 +65,49 @@ pub async fn create_story(
     }))
 }
 
+/// GET /stories — returns stories grouped by user, unseen first.
 pub async fn list_stories(
     State(state): State<StoriesState>,
     Extension(auth): Extension<AuthenticatedUser>,
-) -> Result<Json<Vec<StoryWithUserResponse>>, ApiError> {
+) -> Result<Json<Vec<GroupedStoriesResponse>>, ApiError> {
     let stories = state
         .story_repo
         .list_for_user(auth.user_id)
         .await
         .map_err(|e| ApiError(DomainError::Internal(e.to_string())))?;
 
-    let response: Vec<StoryWithUserResponse> = stories
-        .into_iter()
-        .map(|s| StoryWithUserResponse {
+    // Group stories by user_id preserving the query order (unseen first).
+    let mut grouped: Vec<GroupedStoriesResponse> = Vec::new();
+
+    for s in stories {
+        let pos = grouped.iter().position(|g| g.user_id == s.user_id);
+
+        let group = if let Some(idx) = pos {
+            &mut grouped[idx]
+        } else {
+            grouped.push(GroupedStoriesResponse {
+                user_id: s.user_id,
+                username: s.username.clone(),
+                display_name: s.display_name.clone(),
+                avatar_url: s.avatar_url.clone(),
+                stories: Vec::new(),
+            });
+            grouped.last_mut().unwrap()
+        };
+
+        group.stories.push(UserStoryItem {
             id: s.id,
-            user_id: s.user_id,
             content_url: s.content_url,
             content_type: s.content_type,
             caption: s.caption,
-            privacy: s.privacy.clone(),
+            privacy: s.privacy,
             created_at: s.created_at.to_rfc3339(),
             expires_at: s.expires_at.to_rfc3339(),
-            username: s.username,
-            display_name: s.display_name,
-            avatar_url: s.avatar_url,
             has_viewed: s.has_viewed,
-        })
-        .collect();
+        });
+    }
 
-    Ok(Json(response))
+    Ok(Json(grouped))
 }
 
 pub async fn list_my_stories(
@@ -155,11 +168,12 @@ pub async fn delete_story(
     Ok(Json(()))
 }
 
+/// POST /stories/:id/view — registers a view. No body needed.
+/// Validates that the viewer has permission based on the story's privacy settings.
 pub async fn view_story(
     State(state): State<StoriesState>,
     Extension(auth): Extension<AuthenticatedUser>,
     Path(story_id): Path<Uuid>,
-    Json(req): Json<ViewStoryRequest>,
 ) -> Result<Json<()>, ApiError> {
     let story = state
         .story_repo
@@ -174,23 +188,30 @@ pub async fn view_story(
         )));
     }
 
-    if let Some(reaction) = req.reaction {
-        state
-            .story_repo
-            .add_reaction(story_id, auth.user_id, reaction)
-            .await
-            .map_err(|e| ApiError(DomainError::Internal(e.to_string())))?;
-    } else {
-        state
-            .story_repo
-            .mark_viewed(story_id, auth.user_id)
-            .await
-            .map_err(|e| ApiError(DomainError::Internal(e.to_string())))?;
+    // Verify privacy permissions
+    let can_view = state
+        .story_repo
+        .can_user_view_story(story_id, auth.user_id)
+        .await
+        .map_err(|e| ApiError(DomainError::Internal(e.to_string())))?;
+
+    if !can_view {
+        return Err(ApiError(DomainError::Unauthorized(
+            "You do not have permission to view this story".to_string(),
+        )));
     }
+
+    state
+        .story_repo
+        .mark_viewed(story_id, auth.user_id)
+        .await
+        .map_err(|e| ApiError(DomainError::Internal(e.to_string())))?;
 
     Ok(Json(()))
 }
 
+/// POST /stories/:id/react — adds a reaction. Requires prior view.
+/// Validates privacy permissions before allowing the reaction.
 pub async fn react_to_story(
     State(state): State<StoriesState>,
     Extension(auth): Extension<AuthenticatedUser>,
@@ -207,6 +228,19 @@ pub async fn react_to_story(
     if story.user_id == auth.user_id {
         return Err(ApiError(DomainError::Unauthorized(
             "Cannot react to your own story".to_string(),
+        )));
+    }
+
+    // Verify privacy permissions
+    let can_view = state
+        .story_repo
+        .can_user_view_story(story_id, auth.user_id)
+        .await
+        .map_err(|e| ApiError(DomainError::Internal(e.to_string())))?;
+
+    if !can_view {
+        return Err(ApiError(DomainError::Unauthorized(
+            "You do not have permission to interact with this story".to_string(),
         )));
     }
 

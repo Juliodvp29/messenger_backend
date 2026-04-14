@@ -15,6 +15,7 @@ use crate::handlers::chats::{
 use crate::handlers::keys::{
     KeysState, get_fingerprint, get_key_bundle, get_my_prekey_count, upload_keys, upload_prekeys,
 };
+use crate::handlers::stories::StoryRepo;
 use crate::handlers::stories::{
     StoriesState, create_story, delete_story, get_story_views, list_my_stories, list_stories,
     react_to_story, view_story,
@@ -83,7 +84,7 @@ pub fn create_router(
         storage: Arc::new(S3StorageService::new(&config.s3)),
     };
 
-    let story_repo = Arc::new(PostgresStoryRepository::new(db_pool.clone()));
+    let story_repo: Arc<dyn StoryRepo> = Arc::new(PostgresStoryRepository::new(db_pool.clone()));
     let stories_state = StoriesState {
         story_repo: story_repo.clone(),
     };

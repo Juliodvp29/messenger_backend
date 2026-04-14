@@ -26,7 +26,7 @@ pub struct StoryWithUser {
     pub created_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
     pub username: Option<String>,
-    pub display_name: String,
+    pub display_name: Option<String>,
     pub avatar_url: Option<String>,
     pub has_viewed: bool,
 }
@@ -50,7 +50,7 @@ pub struct StoryView {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoryViewWithUser {
     pub viewer_id: Uuid,
-    pub display_name: String,
+    pub display_name: Option<String>,
     pub avatar_url: Option<String>,
     pub reaction: Option<String>,
     pub viewed_at: DateTime<Utc>,

@@ -112,7 +112,9 @@ impl StoryRepository for PostgresStoryRepository {
         user_id: Uuid,
         is_excluded: bool,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        sqlx::query("INSERT INTO story_privacy_exceptions (story_id, user_id, is_excluded) VALUES ($1, $2, $3) ON CONFLICT DO UPDATE SET is_excluded = $3")
+        sqlx::query(
+            "INSERT INTO story_privacy_exceptions (story_id, user_id, is_excluded) VALUES ($1, $2, $3) \
+             ON CONFLICT (story_id, user_id) DO UPDATE SET is_excluded = $3")
             .bind(story_id).bind(user_id).bind(is_excluded).execute(&self.pool).await?;
         Ok(())
     }
@@ -145,8 +147,14 @@ impl StoryRepository for PostgresStoryRepository {
         story_id: Uuid,
         viewer_id: Uuid,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        sqlx::query("INSERT INTO story_views (story_id, viewer_id) VALUES ($1, $2) ON CONFLICT DO UPDATE SET viewed_at = NOW()")
-            .bind(story_id).bind(viewer_id).execute(&self.pool).await?;
+        sqlx::query(
+            "INSERT INTO story_views (story_id, viewer_id) VALUES ($1, $2) \
+             ON CONFLICT (story_id, viewer_id) DO UPDATE SET viewed_at = NOW()",
+        )
+        .bind(story_id)
+        .bind(viewer_id)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
@@ -156,8 +164,15 @@ impl StoryRepository for PostgresStoryRepository {
         viewer_id: Uuid,
         reaction: String,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        sqlx::query("INSERT INTO story_views (story_id, viewer_id, reaction) VALUES ($1, $2, $3) ON CONFLICT DO UPDATE SET reaction = $3, viewed_at = NOW()")
-            .bind(story_id).bind(viewer_id).bind(reaction).execute(&self.pool).await?;
+        sqlx::query(
+            "INSERT INTO story_views (story_id, viewer_id, reaction) VALUES ($1, $2, $3) \
+             ON CONFLICT (story_id, viewer_id) DO UPDATE SET reaction = $3, viewed_at = NOW()",
+        )
+        .bind(story_id)
+        .bind(viewer_id)
+        .bind(reaction)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
@@ -185,12 +200,25 @@ impl StoryRepository for PostgresStoryRepository {
         &self,
         story_id: Uuid,
     ) -> Result<Vec<StoryViewWithUser>, Box<dyn std::error::Error + Send + Sync>> {
-        let rows = sqlx::query_as!(StoryViewWithUser,
-            r#"SELECT sv.viewer_id, up.display_name, u.avatar_url, sv.reaction, sv.viewed_at
-            FROM story_views sv JOIN users u ON u.id = sv.viewer_id
-            LEFT JOIN user_profiles up ON up.user_id = sv.viewer_id WHERE sv.story_id = $1 ORDER BY sv.viewed_at DESC"#, story_id)
-            .fetch_all(&self.pool).await?;
-        Ok(rows)
+        let rows = sqlx::query(
+            r#"SELECT sv.viewer_id, COALESCE(up.display_name, '') as display_name, u.avatar_url, sv.reaction, sv.viewed_at
+            FROM story_views sv
+            JOIN users u ON u.id = sv.viewer_id
+            LEFT JOIN user_profiles up ON up.user_id = sv.viewer_id
+            WHERE sv.story_id = $1
+            ORDER BY sv.viewed_at DESC"#)
+            .bind(story_id).fetch_all(&self.pool).await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r| StoryViewWithUser {
+                viewer_id: r.get("viewer_id"),
+                display_name: r.get("display_name"),
+                avatar_url: r.get("avatar_url"),
+                reaction: r.get("reaction"),
+                viewed_at: r.get("viewed_at"),
+            })
+            .collect())
     }
 
     async fn has_viewed(
@@ -207,6 +235,48 @@ impl StoryRepository for PostgresStoryRepository {
         .await?;
         Ok(exists.is_some())
     }
+
+    async fn can_user_view_story(
+        &self,
+        story_id: Uuid,
+        viewer_id: Uuid,
+    ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+        // Single query that evaluates all 5 privacy modes:
+        // - everyone: always visible
+        // - contacts: visible if viewer is in author's contacts
+        // - contacts_except: visible if viewer is contact AND NOT excluded
+        // - selected: visible only if viewer is explicitly included (is_excluded = false)
+        // - only_me: never visible to others
+        let result = sqlx::query_scalar(
+            r#"SELECT EXISTS(
+                SELECT 1 FROM stories s
+                WHERE s.id = $1 AND s.deleted_at IS NULL AND s.expires_at > NOW()
+                AND s.user_id != $2
+                AND (
+                    s.privacy = 'everyone'
+                    OR (s.privacy = 'contacts' AND EXISTS(
+                        SELECT 1 FROM contacts c WHERE c.owner_id = s.user_id AND c.contact_id = $2
+                    ))
+                    OR (s.privacy = 'contacts_except' AND EXISTS(
+                        SELECT 1 FROM contacts c WHERE c.owner_id = s.user_id AND c.contact_id = $2
+                    ) AND NOT EXISTS(
+                        SELECT 1 FROM story_privacy_exceptions spe
+                        WHERE spe.story_id = s.id AND spe.user_id = $2 AND spe.is_excluded = TRUE
+                    ))
+                    OR (s.privacy = 'selected' AND EXISTS(
+                        SELECT 1 FROM story_privacy_exceptions spe
+                        WHERE spe.story_id = s.id AND spe.user_id = $2 AND spe.is_excluded = FALSE
+                    ))
+                )
+            ) as allowed"#,
+        )
+        .bind(story_id)
+        .bind(viewer_id)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(result)
+    }
 }
 
 #[async_trait]
@@ -215,14 +285,41 @@ impl ActiveStoryRepository for PostgresStoryRepository {
         &self,
         user_id: Uuid,
     ) -> Result<Vec<StoryWithUser>, Box<dyn std::error::Error + Send + Sync>> {
+        // Full privacy filtering for all 5 modes:
+        // - everyone: always visible
+        // - contacts: visible if viewer is in author's contacts
+        // - contacts_except: visible if viewer is contact AND NOT excluded in exceptions
+        // - selected: visible only if viewer is explicitly included in exceptions
+        // - only_me: excluded (s.user_id != $1 filters this out)
+        //
+        // has_viewed: subquery checks if viewer already has a record in story_views
+        // Ordering: unseen stories first, then seen, each group by created_at DESC
         let rows = sqlx::query(
-            r#"SELECT s.id, s.user_id, s.content_url, s.content_type, s.caption, s.privacy::text as privacy, s.created_at, s.expires_at,
-            u.username, up.display_name, u.avatar_url, FALSE as has_viewed
-            FROM stories s JOIN users u ON u.id = s.user_id LEFT JOIN user_profiles up ON up.user_id = s.user_id
+            r#"SELECT s.id, s.user_id, s.content_url, s.content_type, s.caption,
+                s.privacy::text as privacy, s.created_at, s.expires_at,
+                u.username, COALESCE(up.display_name, '') as display_name, u.avatar_url,
+                EXISTS(SELECT 1 FROM story_views sv WHERE sv.story_id = s.id AND sv.viewer_id = $1) as has_viewed
+            FROM stories s
+            JOIN users u ON u.id = s.user_id
+            LEFT JOIN user_profiles up ON up.user_id = s.user_id
             WHERE s.deleted_at IS NULL AND s.expires_at > NOW() AND s.user_id != $1
-            AND (s.privacy = 'everyone' OR (s.privacy = 'contacts' AND EXISTS(
-                SELECT 1 FROM contacts c WHERE c.owner_id = s.user_id AND c.contact_id = $1)))
-            ORDER BY s.created_at DESC"#)
+            AND (
+                s.privacy = 'everyone'
+                OR (s.privacy = 'contacts' AND EXISTS(
+                    SELECT 1 FROM contacts c WHERE c.owner_id = s.user_id AND c.contact_id = $1
+                ))
+                OR (s.privacy = 'contacts_except' AND EXISTS(
+                    SELECT 1 FROM contacts c WHERE c.owner_id = s.user_id AND c.contact_id = $1
+                ) AND NOT EXISTS(
+                    SELECT 1 FROM story_privacy_exceptions spe
+                    WHERE spe.story_id = s.id AND spe.user_id = $1 AND spe.is_excluded = TRUE
+                ))
+                OR (s.privacy = 'selected' AND EXISTS(
+                    SELECT 1 FROM story_privacy_exceptions spe
+                    WHERE spe.story_id = s.id AND spe.user_id = $1 AND spe.is_excluded = FALSE
+                ))
+            )
+            ORDER BY has_viewed ASC, s.created_at DESC"#)
             .bind(user_id).fetch_all(&self.pool).await?;
 
         Ok(rows
@@ -249,12 +346,19 @@ impl ActiveStoryRepository for PostgresStoryRepository {
         user_id: Uuid,
     ) -> Result<Vec<StoryWithUser>, Box<dyn std::error::Error + Send + Sync>> {
         let rows = sqlx::query(
-            r#"SELECT s.id, s.user_id, s.content_url, s.content_type, s.caption, s.privacy::text as privacy, s.created_at, s.expires_at,
-            u.username, up.display_name, u.avatar_url, FALSE as has_viewed
-            FROM stories s JOIN users u ON u.id = s.user_id LEFT JOIN user_profiles up ON up.user_id = s.user_id
+            r#"SELECT s.id, s.user_id, s.content_url, s.content_type, s.caption,
+                s.privacy::text as privacy, s.created_at, s.expires_at,
+                u.username, COALESCE(up.display_name, '') as display_name, u.avatar_url,
+                TRUE as has_viewed
+            FROM stories s
+            JOIN users u ON u.id = s.user_id
+            LEFT JOIN user_profiles up ON up.user_id = s.user_id
             WHERE s.user_id = $1 AND s.deleted_at IS NULL AND s.expires_at > NOW()
-            ORDER BY s.created_at DESC"#)
-            .bind(user_id).fetch_all(&self.pool).await?;
+            ORDER BY s.created_at DESC"#,
+        )
+        .bind(user_id)
+        .fetch_all(&self.pool)
+        .await?;
 
         Ok(rows
             .into_iter()
