@@ -1,9 +1,10 @@
 use axum::http::StatusCode;
 use axum::{
     Json,
-    extract::{Extension, Path, State},
+    extract::{Extension, Path, State, ConnectInfo},
     response::{IntoResponse, Response},
 };
+use std::net::SocketAddr;
 use chrono::{Duration, Utc};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -203,12 +204,13 @@ async fn issue_tokens(
 
 pub async fn register(
     State(state): State<AuthState>,
+    ConnectInfo(client_ip): ConnectInfo<SocketAddr>,
     Json(req): Json<RegisterRequest>,
 ) -> Result<Response, ApiError> {
     let phone =
         PhoneNumber::new(req.phone.clone()).map_err(|e| DomainError::Validation(e.to_string()))?;
 
-    let rate_key = format!("register:{}", req.device_id);
+    let rate_key = format!("register:{}:{}", client_ip.ip(), req.device_id);
     let allowed = state
         .otp_service
         .check_rate_limit(&rate_key, 5, 3600)
@@ -296,6 +298,7 @@ pub async fn verify_phone(
 
 pub async fn login(
     State(state): State<AuthState>,
+    ConnectInfo(client_ip): ConnectInfo<SocketAddr>,
     Json(req): Json<LoginRequest>,
 ) -> Result<Response, ApiError> {
     let phone =
@@ -307,7 +310,7 @@ pub async fn login(
         .await?
         .ok_or_else(|| DomainError::Unauthorized("Credenciales inválidas".to_string()))?;
 
-    let rate_key = format!("login:{}", req.device_id);
+    let rate_key = format!("login:{}:{}", client_ip.ip(), req.device_id);
     let allowed = state
         .otp_service
         .check_rate_limit(&rate_key, 10, 3600)
@@ -381,8 +384,7 @@ pub async fn login_verify(
             StatusCode::ACCEPTED,
             Json(serde_json::json!({
                 "two_fa_required": true,
-                "temp_token": temp_token,
-                "code": two_fa_code
+                "temp_token": temp_token
             })),
         )
             .into_response());
