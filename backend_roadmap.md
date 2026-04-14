@@ -1475,7 +1475,6 @@ meta: >
   La privacidad es granular (5 modos). Las vistas y reacciones funcionan
   en tiempo real. La expiración es automática via pg_cron.
 
-gitflow_rama: "feature/FASE-07-stories"
 dependencias: ["FASE-05"]
 
 endpoints:

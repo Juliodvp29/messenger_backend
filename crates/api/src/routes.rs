@@ -15,6 +15,10 @@ use crate::handlers::chats::{
 use crate::handlers::keys::{
     KeysState, get_fingerprint, get_key_bundle, get_my_prekey_count, upload_keys, upload_prekeys,
 };
+use crate::handlers::stories::{
+    StoriesState, create_story, delete_story, get_story_views, list_my_stories, list_stories,
+    view_story,
+};
 use crate::handlers::ws::{WsState, ws_handler};
 use crate::middleware::auth::{AuthMiddlewareState, auth_middleware};
 use crate::services::jwt::JwtService;
@@ -22,6 +26,7 @@ use crate::services::otp::OtpService;
 use crate::services::storage::S3StorageService;
 use infrastructure::repositories::chat::PostgresChatRepository;
 use infrastructure::repositories::keys::PostgresKeyRepository;
+use infrastructure::repositories::stories::PostgresStoryRepository;
 use infrastructure::repositories::user::PostgresUserRepository;
 use redis::aio::ConnectionManager;
 use shared::config::Config;
@@ -76,6 +81,11 @@ pub fn create_router(
     let attachments_state = AttachmentsState {
         chat_repo: chat_repo.clone(),
         storage: Arc::new(S3StorageService::new(&config.s3)),
+    };
+
+    let story_repo = Arc::new(PostgresStoryRepository::new(db_pool.clone()));
+    let stories_state = StoriesState {
+        story_repo: story_repo.clone(),
     };
 
     let ws_state = Arc::new(WsState {
@@ -149,6 +159,18 @@ pub fn create_router(
         ))
         .with_state(attachments_state);
 
+    let protected_story_routes = Router::new()
+        .route("/stories", post(create_story).get(list_stories))
+        .route("/stories/my", get(list_my_stories))
+        .route("/stories/:id", delete(delete_story))
+        .route("/stories/:id/view", post(view_story))
+        .route("/stories/:id/views", get(get_story_views))
+        .route_layer(middleware::from_fn_with_state(
+            auth_middleware_state.clone(),
+            auth_middleware,
+        ))
+        .with_state(stories_state);
+
     let ws_routes = Router::new()
         .route("/ws", get(ws_handler))
         .with_state(ws_router_state);
@@ -170,6 +192,7 @@ pub fn create_router(
         .merge(protected_keys_routes)
         .merge(protected_chat_routes)
         .merge(protected_attachment_routes)
+        .merge(protected_story_routes)
         .with_state(auth_state)
 }
 

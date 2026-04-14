@@ -54,6 +54,7 @@ rand = "0.8"
 thiserror = "1"
 anyhow = "1"
 urlencoding = "2"
+async-trait = "0.1"
 
 # Logging y métricas
 tracing = "0.1"
