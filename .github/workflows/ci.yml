@@ -23,18 +23,18 @@ env:
   SERVER__PORT: 3000
   SERVER__CORS_ORIGINS: "*"
   SERVER__RATE_LIMIT_ENABLED: false
-  DATABASE__URL: postgres://messenger:messenger_secret@localhost:5434/messenger_test
-  DATABASE_URL: postgres://messenger:messenger_secret@localhost:5434/messenger_test
-  REDIS__URL: redis://localhost:6379
+  DATABASE__URL: postgres://messenger:messenger_secret@127.0.0.1:5434/messenger_test
+  DATABASE_URL: postgres://messenger:messenger_secret@127.0.0.1:5434/messenger_test
+  REDIS__URL: redis://127.0.0.1:6379
   DATABASE__MAX_CONNECTIONS: 5
   DATABASE__MIN_CONNECTIONS: 1
   REDIS__MAX_CONNECTIONS: 5
-  S3__ENDPOINT: http://localhost:9000
+  S3__ENDPOINT: http://127.0.0.1:9000
   S3__BUCKET: test-bucket
   S3__ACCESS_KEY_ID: minioadmin
   S3__SECRET_ACCESS_KEY: minioadmin123
   S3__REGION: us-east-1
-  SMTP__HOST: localhost
+  SMTP__HOST: 127.0.0.1
   SMTP__PORT: 1025
   SMTP__FROM: test@messenger.local
   SMS__PROVIDER: test
@@ -60,8 +60,9 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      DATABASE_URL: postgres://postgres:password@localhost:5432/messenger
-      DATABASE__URL: postgres://postgres:password@localhost:5432/messenger
+      DATABASE_URL: postgres://postgres:password@127.0.0.1:5432/messenger
+      DATABASE__URL: postgres://postgres:password@127.0.0.1:5432/messenger
+      SQLX_OFFLINE: true
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust
@@ -73,7 +74,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
       
       - name: Install sqlx-cli
-        run: cargo install sqlx-cli --no-default-features --features postgres
+        run: cargo install sqlx-cli --no-default-features --features postgres --locked
 
       - name: Run Migrations
         run: sqlx migrate run --source ./migrations
@@ -125,13 +126,16 @@ jobs:
         uses: Swatinem/rust-cache@v2
       
       - name: Install sqlx-cli
-        run: cargo install sqlx-cli --no-default-features --features postgres
+        run: cargo install sqlx-cli --no-default-features --features postgres --locked
 
       - name: Run Migrations
+        env:
+          DATABASE_URL: postgres://messenger:messenger_secret@127.0.0.1:5434/messenger_test
         run: sqlx migrate run --source ./migrations
 
       - name: Run Tests
         env:
           DATABASE_URL: postgres://messenger:messenger_secret@127.0.0.1:5434/messenger_test
           DATABASE__URL: postgres://messenger:messenger_secret@127.0.0.1:5434/messenger_test
+          REDIS__URL: redis://127.0.0.1:6379
         run: cargo test --workspace
