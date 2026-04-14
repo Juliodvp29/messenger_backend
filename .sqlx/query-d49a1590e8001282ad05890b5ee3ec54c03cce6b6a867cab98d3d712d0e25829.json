@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE user_keys\n            SET prekey_count = (\n                SELECT COUNT(*) FROM one_time_prekeys \n                WHERE user_id = $1 AND is_consumed = FALSE\n            ),\n            updated_at = NOW()\n            WHERE user_id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d49a1590e8001282ad05890b5ee3ec54c03cce6b6a867cab98d3d712d0e25829"
+}
