@@ -107,3 +107,72 @@ pub struct MessageCursorDto {
     pub created_at: DateTime<Utc>,
     pub message_id: Uuid,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct MarkMessagesReadRequest {
+    pub up_to: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MarkMessagesReadResponse {
+    pub updated_count: i32,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AddReactionRequest {
+    pub reaction: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ReactionResponse {
+    pub id: Uuid,
+    pub message_id: Uuid,
+    pub user_id: Uuid,
+    pub reaction: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RemoveReactionResponse {
+    pub removed: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateChatRequest {
+    pub name: Option<String>,
+    pub avatar_url: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UpdateChatResponse {
+    pub id: Uuid,
+    pub chat_type: String,
+    pub name: Option<String>,
+    pub avatar_url: Option<String>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DeleteChatResponse {
+    pub deleted: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct EditMessageRequest {
+    pub content_encrypted: Option<String>,
+    pub content_iv: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct EditMessageResponse {
+    pub id: Uuid,
+    pub chat_id: Uuid,
+    pub content_encrypted: Option<String>,
+    pub content_iv: Option<String>,
+    pub edited_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DeleteMessageResponse {
+    pub deleted: bool,
+}

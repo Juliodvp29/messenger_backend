@@ -53,6 +53,15 @@ pub struct ConfirmAttachmentInput {
     pub encryption_iv: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct MessageReaction {
+    pub id: Uuid,
+    pub message_id: Uuid,
+    pub user_id: Uuid,
+    pub reaction: String,
+    pub created_at: DateTime<Utc>,
+}
+
 #[allow(async_fn_in_trait)]
 pub trait ChatRepository: Send + Sync {
     async fn create_private_chat(
@@ -105,4 +114,49 @@ pub trait ChatRepository: Send + Sync {
     ) -> DomainResult<Option<PendingAttachment>>;
 
     async fn confirm_attachment(&self, input: ConfirmAttachmentInput) -> DomainResult<()>;
+
+    async fn verify_participant(&self, user_id: Uuid, chat_id: Uuid) -> DomainResult<()>;
+
+    async fn verify_message_in_chat(&self, message_id: Uuid, chat_id: Uuid) -> DomainResult<()>;
+
+    async fn mark_messages_read(
+        &self,
+        user_id: Uuid,
+        chat_id: Uuid,
+        up_to: DateTime<Utc>,
+    ) -> DomainResult<i32>;
+
+    async fn add_reaction(
+        &self,
+        message_id: Uuid,
+        user_id: Uuid,
+        reaction: String,
+    ) -> DomainResult<MessageReaction>;
+
+    async fn remove_reaction(
+        &self,
+        message_id: Uuid,
+        user_id: Uuid,
+        reaction: &str,
+    ) -> DomainResult<bool>;
+
+    async fn update_chat(
+        &self,
+        user_id: Uuid,
+        chat_id: Uuid,
+        name: Option<String>,
+        avatar_url: Option<String>,
+    ) -> DomainResult<Chat>;
+
+    async fn delete_chat(&self, user_id: Uuid, chat_id: Uuid) -> DomainResult<()>;
+
+    async fn edit_message(
+        &self,
+        user_id: Uuid,
+        message_id: Uuid,
+        content_encrypted: Option<String>,
+        content_iv: Option<String>,
+    ) -> DomainResult<ChatMessage>;
+
+    async fn delete_message(&self, user_id: Uuid, message_id: Uuid) -> DomainResult<()>;
 }

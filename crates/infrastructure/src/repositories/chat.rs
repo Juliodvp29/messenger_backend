@@ -3,7 +3,7 @@ use domain::chat::entity::PendingAttachment;
 use domain::chat::entity::{Chat, ChatMessage, ChatPreview, ChatType};
 use domain::chat::repository::{
     ChatCursor, ChatRepository, ConfirmAttachmentInput, MessageCursor, MessageDirection,
-    NewMessage, NewPendingAttachment, MessageReaction,
+    MessageReaction, NewMessage, NewPendingAttachment,
 };
 use shared::error::{DomainError, DomainResult};
 use sqlx::PgPool;
@@ -19,6 +19,7 @@ impl PostgresChatRepository {
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn map_message_row(
     row: (
         Uuid,
@@ -828,8 +829,9 @@ impl ChatRepository for PostgresChatRepository {
         name: Option<String>,
         avatar_url: Option<String>,
     ) -> DomainResult<Chat> {
-        let (chat_type, current_name, current_avatar, created_by) = sqlx::query_as::<_, (String, Option<String>, Option<String>, Option<Uuid>)>(
-            r#"
+        let (chat_type, current_name, current_avatar, created_by) =
+            sqlx::query_as::<_, (String, Option<String>, Option<String>, Option<Uuid>)>(
+                r#"
             SELECT c.type::text, c.name, c.avatar_url, c.created_by
             FROM chats c
             JOIN chat_participants cp ON cp.chat_id = c.id
@@ -838,12 +840,12 @@ impl ChatRepository for PostgresChatRepository {
               AND cp.left_at IS NULL
               AND c.deleted_at IS NULL
             "#,
-        )
-        .bind(chat_id)
-        .bind(user_id)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| DomainError::Internal(e.to_string()))?;
+            )
+            .bind(chat_id)
+            .bind(user_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| DomainError::Internal(e.to_string()))?;
 
         let new_name = name.or(current_name.clone());
         let new_avatar = avatar_url.or(current_avatar.clone());
@@ -894,8 +896,9 @@ impl ChatRepository for PostgresChatRepository {
         .await
         .map_err(|e| DomainError::Internal(e.to_string()))?;
 
-        let chat_type = chat_exists
-            .ok_or_else(|| DomainError::NotFound("chat not found or not a participant".to_string()))?;
+        let chat_type = chat_exists.ok_or_else(|| {
+            DomainError::NotFound("chat not found or not a participant".to_string())
+        })?;
 
         if chat_type == "private" {
             sqlx::query(
@@ -1041,10 +1044,12 @@ impl ChatRepository for PostgresChatRepository {
         .map_err(|e| DomainError::Internal(e.to_string()))?;
 
         if result.rows_affected() == 0 {
-            return Err(DomainError::NotFound("message not found or not authorized".to_string()));
+            return Err(DomainError::NotFound(
+                "message not found or not authorized".to_string(),
+            ));
         }
 
-Ok(())
+        Ok(())
     }
 }
 

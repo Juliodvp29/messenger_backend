@@ -1,6 +1,6 @@
 use axum::{
     Router, middleware,
-    routing::{delete, get, post},
+    routing::{delete, get, patch, post},
 };
 
 use crate::handlers::attachments::{AttachmentsState, confirm_attachment, create_upload_url};
@@ -9,7 +9,8 @@ use crate::handlers::auth::{
     register, two_fa_setup, two_fa_setup_verify, two_fa_verify, verify_phone,
 };
 use crate::handlers::chats::{
-    ChatsState, create_chat, get_chat, list_chats, list_messages, send_message,
+    ChatsState, add_reaction, create_chat, delete_chat, delete_message, edit_message, get_chat,
+    list_chats, list_messages, mark_messages_read, remove_reaction, send_message, update_chat,
 };
 use crate::handlers::keys::{
     KeysState, get_fingerprint, get_key_bundle, get_my_prekey_count, upload_keys, upload_prekeys,
@@ -95,8 +96,24 @@ pub fn create_router(
 
     let protected_chat_routes = Router::new()
         .route("/chats", post(create_chat).get(list_chats))
-        .route("/chats/:id", get(get_chat))
+        .route(
+            "/chats/:id",
+            get(get_chat).patch(update_chat).delete(delete_chat),
+        )
         .route("/chats/:id/messages", post(send_message).get(list_messages))
+        .route(
+            "/chats/:id/messages/:message_id",
+            patch(edit_message).delete(delete_message),
+        )
+        .route("/chats/:id/messages/read", post(mark_messages_read))
+        .route(
+            "/chats/:id/messages/:message_id/reactions",
+            post(add_reaction),
+        )
+        .route(
+            "/chats/:id/messages/:message_id/reactions/remove",
+            post(remove_reaction),
+        )
         .route_layer(middleware::from_fn_with_state(
             auth_middleware_state.clone(),
             auth_middleware,

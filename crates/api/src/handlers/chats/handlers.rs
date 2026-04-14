@@ -16,9 +16,12 @@ use uuid::Uuid;
 
 use crate::error::ApiError;
 use crate::handlers::chats::dto::{
-    ChatCursorDto, ChatPreviewResponse, ChatResponse, CreateChatRequest, ListChatsQuery,
-    ListChatsResponse, ListMessagesQuery, ListMessagesResponse, MessageCursorDto, MessageResponse,
-    SendMessageRequest,
+    AddReactionRequest, ChatCursorDto, ChatPreviewResponse, ChatResponse, CreateChatRequest,
+    DeleteChatResponse, DeleteMessageResponse, EditMessageRequest, EditMessageResponse,
+    ListChatsQuery, ListChatsResponse, ListMessagesQuery, ListMessagesResponse,
+    MarkMessagesReadRequest, MarkMessagesReadResponse, MessageCursorDto, MessageResponse,
+    ReactionResponse, RemoveReactionResponse, SendMessageRequest, UpdateChatRequest,
+    UpdateChatResponse,
 };
 use crate::middleware::auth::AuthenticatedUser;
 use infrastructure::repositories::chat::PostgresChatRepository;
@@ -298,4 +301,246 @@ async fn publish_message_event(state: &ChatsState, message: &ChatMessage) -> Res
         .await
         .map_err(|e| DomainError::Internal(format!("failed to publish message event: {e}")))?;
     Ok(())
+}
+
+pub async fn mark_messages_read(
+    State(state): State<ChatsState>,
+    Extension(auth): Extension<AuthenticatedUser>,
+    Path(chat_id): Path<Uuid>,
+    Json(req): Json<MarkMessagesReadRequest>,
+) -> Result<Response, ApiError> {
+    // Verify user is participant in the chat
+    state
+        .chat_repo
+        .verify_participant(auth.user_id, chat_id)
+        .await?;
+
+    // Mark messages as read
+    let updated_count = state
+        .chat_repo
+        .mark_messages_read(auth.user_id, chat_id, req.up_to)
+        .await?;
+
+    // Publish read event to Redis
+    publish_messages_read_event(&state, chat_id, auth.user_id, req.up_to).await?;
+
+    let response = MarkMessagesReadResponse { updated_count };
+    Ok((StatusCode::OK, Json(response)).into_response())
+}
+
+pub async fn add_reaction(
+    State(state): State<ChatsState>,
+    Extension(auth): Extension<AuthenticatedUser>,
+    Path((chat_id, message_id)): Path<(Uuid, Uuid)>,
+    Json(req): Json<AddReactionRequest>,
+) -> Result<Response, ApiError> {
+    // Verify user is participant in the chat
+    state
+        .chat_repo
+        .verify_participant(auth.user_id, chat_id)
+        .await?;
+
+    // Verify message exists and belongs to chat
+    state
+        .chat_repo
+        .verify_message_in_chat(message_id, chat_id)
+        .await?;
+
+    // Add reaction
+    let reaction = state
+        .chat_repo
+        .add_reaction(message_id, auth.user_id, req.reaction)
+        .await?;
+
+    // Publish reaction event to Redis
+    publish_reaction_event(
+        &state,
+        chat_id,
+        message_id,
+        auth.user_id,
+        &reaction.reaction,
+        "add",
+    )
+    .await?;
+
+    let response = ReactionResponse {
+        id: reaction.id,
+        message_id: reaction.message_id,
+        user_id: reaction.user_id,
+        reaction: reaction.reaction,
+        created_at: reaction.created_at,
+    };
+    Ok((StatusCode::CREATED, Json(response)).into_response())
+}
+
+pub async fn remove_reaction(
+    State(state): State<ChatsState>,
+    Extension(auth): Extension<AuthenticatedUser>,
+    Path((chat_id, message_id)): Path<(Uuid, Uuid)>,
+    Json(req): Json<AddReactionRequest>,
+) -> Result<Response, ApiError> {
+    // Verify user is participant in the chat
+    state
+        .chat_repo
+        .verify_participant(auth.user_id, chat_id)
+        .await?;
+
+    // Verify message exists and belongs to chat
+    state
+        .chat_repo
+        .verify_message_in_chat(message_id, chat_id)
+        .await?;
+
+    // Remove reaction
+    let removed = state
+        .chat_repo
+        .remove_reaction(message_id, auth.user_id, &req.reaction)
+        .await?;
+
+    if removed {
+        // Publish reaction event to Redis
+        publish_reaction_event(
+            &state,
+            chat_id,
+            message_id,
+            auth.user_id,
+            &req.reaction,
+            "remove",
+        )
+        .await?;
+    }
+
+    let response = RemoveReactionResponse { removed };
+    Ok((StatusCode::OK, Json(response)).into_response())
+}
+
+async fn publish_messages_read_event(
+    state: &ChatsState,
+    chat_id: Uuid,
+    user_id: Uuid,
+    up_to: chrono::DateTime<chrono::Utc>,
+) -> Result<(), ApiError> {
+    let mut redis = state.redis.clone();
+    let channel = format!("chat:{}:events", chat_id);
+    let payload = serde_json::json!({
+        "type": "messages_read",
+        "chat_id": chat_id,
+        "user_id": user_id,
+        "up_to": up_to,
+    })
+    .to_string();
+
+    let _: i64 = redis.publish(channel, payload).await.map_err(|e| {
+        DomainError::Internal(format!("failed to publish messages_read event: {e}"))
+    })?;
+    Ok(())
+}
+
+async fn publish_reaction_event(
+    state: &ChatsState,
+    chat_id: Uuid,
+    message_id: Uuid,
+    user_id: Uuid,
+    reaction: &str,
+    action: &str,
+) -> Result<(), ApiError> {
+    let mut redis = state.redis.clone();
+    let channel = format!("chat:{}:events", chat_id);
+    let payload = serde_json::json!({
+        "type": "reaction",
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "user_id": user_id,
+        "reaction": reaction,
+        "action": action,
+    })
+    .to_string();
+
+    let _: i64 = redis
+        .publish(channel, payload)
+        .await
+        .map_err(|e| DomainError::Internal(format!("failed to publish reaction event: {e}")))?;
+    Ok(())
+}
+
+pub async fn update_chat(
+    State(state): State<ChatsState>,
+    Extension(auth): Extension<AuthenticatedUser>,
+    Path(chat_id): Path<Uuid>,
+    Json(req): Json<UpdateChatRequest>,
+) -> Result<Response, ApiError> {
+    let chat = state
+        .chat_repo
+        .update_chat(auth.user_id, chat_id, req.name, req.avatar_url)
+        .await?;
+
+    let response = UpdateChatResponse {
+        id: chat.id,
+        chat_type: chat.chat_type.as_db_str().to_string(),
+        name: chat.name,
+        avatar_url: chat.avatar_url,
+        updated_at: chat.created_at,
+    };
+    Ok((StatusCode::OK, Json(response)).into_response())
+}
+
+pub async fn delete_chat(
+    State(state): State<ChatsState>,
+    Extension(auth): Extension<AuthenticatedUser>,
+    Path(chat_id): Path<Uuid>,
+) -> Result<Response, ApiError> {
+    state.chat_repo.delete_chat(auth.user_id, chat_id).await?;
+
+    let response = DeleteChatResponse { deleted: true };
+    Ok((StatusCode::OK, Json(response)).into_response())
+}
+
+pub async fn edit_message(
+    State(state): State<ChatsState>,
+    Extension(auth): Extension<AuthenticatedUser>,
+    Path((chat_id, message_id)): Path<(Uuid, Uuid)>,
+    Json(req): Json<EditMessageRequest>,
+) -> Result<Response, ApiError> {
+    state
+        .chat_repo
+        .verify_participant(auth.user_id, chat_id)
+        .await?;
+
+    let message = state
+        .chat_repo
+        .edit_message(
+            auth.user_id,
+            message_id,
+            req.content_encrypted,
+            req.content_iv,
+        )
+        .await?;
+
+    let response = EditMessageResponse {
+        id: message.id,
+        chat_id: message.chat_id,
+        content_encrypted: message.content_encrypted,
+        content_iv: message.content_iv,
+        edited_at: message.edited_at.unwrap_or(message.created_at),
+    };
+    Ok((StatusCode::OK, Json(response)).into_response())
+}
+
+pub async fn delete_message(
+    State(state): State<ChatsState>,
+    Extension(auth): Extension<AuthenticatedUser>,
+    Path((chat_id, message_id)): Path<(Uuid, Uuid)>,
+) -> Result<Response, ApiError> {
+    state
+        .chat_repo
+        .verify_participant(auth.user_id, chat_id)
+        .await?;
+
+    state
+        .chat_repo
+        .delete_message(auth.user_id, message_id)
+        .await?;
+
+    let response = DeleteMessageResponse { deleted: true };
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
