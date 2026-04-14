@@ -89,6 +89,8 @@ pub fn create_router(
     let story_repo: Arc<dyn StoryRepo> = Arc::new(PostgresStoryRepository::new(db_pool.clone()));
     let stories_state = StoriesState {
         story_repo: story_repo.clone(),
+        chat_repo: chat_repo.clone(),
+        redis: redis_manager.clone(),
     };
 
     let ws_state = Arc::new(WsState {

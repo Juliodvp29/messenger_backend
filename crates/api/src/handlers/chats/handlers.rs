@@ -27,6 +27,7 @@ use crate::handlers::chats::dto::{
     UpdateChatRequest, UpdateChatResponse, UpdateChatSettingsRequest,
 };
 use crate::middleware::auth::AuthenticatedUser;
+use crate::services::push::{PRESENCE_KEY_PREFIX, PushNotificationJob, enqueue_push_notification};
 use infrastructure::repositories::chat::PostgresChatRepository;
 
 #[derive(Clone)]
@@ -335,6 +336,42 @@ async fn publish_message_event(
                 .publish(user_channel, user_payload)
                 .await
                 .map_err(|e| DomainError::Internal(format!("failed to publish user event: {e}")))?;
+
+            // 1. Verificar si el usuario está online
+            let presence_key = format!("{}{}", PRESENCE_KEY_PREFIX, participant_id);
+            let is_online: bool = redis.exists(&presence_key).await.unwrap_or(false);
+
+            if !is_online {
+                // 2. Revisar preferencias (mute)
+                let settings = state
+                    .chat_repo
+                    .get_chat_settings(participant_id, message.chat_id)
+                    .await
+                    .unwrap_or(None)
+                    .unwrap_or_default();
+
+                let is_muted = settings.is_muted
+                    || settings
+                        .muted_until
+                        .map_or(false, |until| until > chrono::Utc::now());
+
+                if !is_muted {
+                    // 3. Encolar notificación Push
+                    let job = PushNotificationJob {
+                        user_id: participant_id,
+                        notification_type: "new_message".to_string(),
+                        payload: serde_json::json!({
+                            "chat_id": message.chat_id,
+                            "message_id": message.id,
+                            "sender_id": message.sender_id,
+                        }),
+                    };
+
+                    if let Err(e) = enqueue_push_notification(&mut redis, job).await {
+                        tracing::error!("Failed to enqueue push notification: {}", e);
+                    }
+                }
+            }
         }
     }
 

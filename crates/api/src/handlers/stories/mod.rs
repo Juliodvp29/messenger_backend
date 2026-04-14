@@ -12,6 +12,8 @@ pub use handlers::*;
 #[derive(Clone)]
 pub struct StoriesState {
     pub story_repo: Arc<dyn StoryRepo>,
+    pub chat_repo: Arc<infrastructure::repositories::chat::PostgresChatRepository>,
+    pub redis: redis::aio::ConnectionManager,
 }
 
 /// Supertrait combining StoryRepository + ActiveStoryRepository for ergonomic

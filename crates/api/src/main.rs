@@ -29,6 +29,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await
         .expect("No se pudo conectar a Redis");
 
+    // Start push notification worker
+    let worker_redis = redis_manager.clone();
+    let worker_pool = db_pool.clone();
+    let worker_config = config.push.clone();
+    tokio::spawn(async move {
+        api::services::push::push_notification_worker(worker_redis, worker_pool, worker_config)
+            .await;
+    });
+
     let app = create_router(&config, db_pool, redis_manager);
 
     let addr = format!("{}:{}", config.server.host, config.server.port);
