@@ -1,6 +1,7 @@
-use domain::user::value_objects::{PhoneNumber, UserId, Username};
-use domain::user::entity::User;
 use crate::repositories::user::PostgresUserRepository;
+use domain::user::entity::User;
+use domain::user::repository::UserRepository;
+use domain::user::value_objects::{PhoneNumber, UserId, Username};
 use sqlx::PgPool;
 
 #[sqlx::test]
@@ -37,7 +38,10 @@ async fn test_find_by_phone(pool: PgPool) -> sqlx::Result<()> {
 
     repo.create(&user).await.expect("Should create user");
 
-    let found = repo.find_by_phone(&phone).await.expect("Should find by phone");
+    let found = repo
+        .find_by_phone(&phone)
+        .await
+        .expect("Should find by phone");
     assert!(found.is_some());
     assert_eq!(found.unwrap().phone.as_str(), "+573001222222");
 
@@ -57,11 +61,19 @@ async fn test_update_user(pool: PgPool) -> sqlx::Result<()> {
 
     repo.create(&user).await.expect("Should create user");
 
-    let mut found = repo.find_by_phone(&phone).await.expect("Should find user").unwrap();
+    let mut found = repo
+        .find_by_phone(&phone)
+        .await
+        .expect("Should find user")
+        .unwrap();
     found.status_text = "Updated status".to_string();
     repo.update(&found).await.expect("Should update user");
 
-    let updated = repo.find_by_phone(&phone).await.expect("Should find updated user").unwrap();
+    let updated = repo
+        .find_by_phone(&phone)
+        .await
+        .expect("Should find updated user")
+        .unwrap();
     assert_eq!(updated.status_text, "Updated status");
 
     Ok(())
@@ -81,9 +93,14 @@ async fn test_delete_soft_user(pool: PgPool) -> sqlx::Result<()> {
     repo.create(&user).await.expect("Should create user");
     let user_id = user.id.clone();
 
-    repo.delete_soft(&user_id).await.expect("Should soft delete user");
+    repo.delete_soft(&user_id)
+        .await
+        .expect("Should soft delete user");
 
-    let found = repo.find_by_id(&user_id).await.expect("Should not find deleted user");
+    let found = repo
+        .find_by_id(&user_id)
+        .await
+        .expect("Should not find deleted user");
     assert!(found.is_none());
 
     Ok(())

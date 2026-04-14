@@ -411,9 +411,13 @@ pub async fn add_reaction(
 pub async fn remove_reaction(
     State(state): State<ChatsState>,
     Extension(auth): Extension<AuthenticatedUser>,
-    Path((chat_id, message_id)): Path<(Uuid, Uuid)>,
-    Json(req): Json<AddReactionRequest>,
+    Path((chat_id, message_id, emoji)): Path<(Uuid, Uuid, String)>,
 ) -> Result<Response, ApiError> {
+    // Decode emoji from URL
+    let reaction_emoji = urlencoding::decode(&emoji)
+        .map_err(|_| DomainError::Validation("invalid emoji encoding".to_string()))?
+        .into_owned();
+
     // Verify user is participant in the chat
     state
         .chat_repo
@@ -429,7 +433,7 @@ pub async fn remove_reaction(
     // Remove reaction
     let removed = state
         .chat_repo
-        .remove_reaction(message_id, auth.user_id, &req.reaction)
+        .remove_reaction(message_id, auth.user_id, &reaction_emoji)
         .await?;
 
     if removed {
@@ -439,7 +443,7 @@ pub async fn remove_reaction(
             chat_id,
             message_id,
             auth.user_id,
-            &req.reaction,
+            &reaction_emoji,
             "remove",
         )
         .await?;

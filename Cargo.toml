@@ -26,7 +26,7 @@ tower = { version = "0.4" }
 tower-http = { version = "0.5", features = ["cors", "trace", "compression-gzip"] }
 
 # Base de datos
-sqlx = { version = "0.7", default-features = false, features = ["postgres", "runtime-tokio-rustls", "macros", "uuid", "chrono", "json"] }
+sqlx = { version = "0.7", default-features = false, features = ["postgres", "runtime-tokio-rustls", "macros", "uuid", "chrono", "json", "migrate"] }
 
 # Redis
 redis = { version = "0.25", features = ["tokio-comp", "connection-manager", "aio"] }
@@ -53,6 +53,7 @@ rand = "0.8"
 # Errores
 thiserror = "1"
 anyhow = "1"
+urlencoding = "2"
 
 # Logging y métricas
 tracing = "0.1"
