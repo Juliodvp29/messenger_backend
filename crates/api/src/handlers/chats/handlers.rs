@@ -550,13 +550,20 @@ pub async fn update_chat(
 ) -> Result<Response, ApiError> {
     let chat = state
         .chat_repo
-        .update_chat(auth.user_id, chat_id, req.name, req.avatar_url)
+        .update_chat(
+            auth.user_id,
+            chat_id,
+            req.name,
+            req.description,
+            req.avatar_url,
+        )
         .await?;
 
     let response = UpdateChatResponse {
         id: chat.id,
         chat_type: chat.chat_type.as_db_str().to_string(),
         name: chat.name,
+        description: chat.description,
         avatar_url: chat.avatar_url,
         updated_at: chat.created_at,
     };

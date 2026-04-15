@@ -14,6 +14,10 @@ use crate::handlers::chats::{
     mark_all_notifications_read, mark_messages_read, mark_notification_read, remove_reaction,
     send_message, update_chat, update_chat_settings,
 };
+use crate::handlers::groups::{
+    add_participant, create_invite_link, delete_invite_link, join_by_slug, list_participants,
+    remove_participant, rotate_group_key, transfer_ownership, update_participant_role,
+};
 use crate::handlers::keys::{
     KeysState, get_fingerprint, get_key_bundle, get_my_prekey_count, upload_keys, upload_prekeys,
 };
@@ -150,6 +154,26 @@ pub fn create_router(
             delete(remove_reaction),
         )
         .route("/chats/:id/settings", patch(update_chat_settings))
+        // ---- Phase 9: Group / Channel management ----
+        .route(
+            "/chats/:id/participants",
+            get(list_participants).post(add_participant),
+        )
+        .route(
+            "/chats/:id/participants/:user_id",
+            delete(remove_participant),
+        )
+        .route(
+            "/chats/:id/participants/:user_id/role",
+            patch(update_participant_role),
+        )
+        .route(
+            "/chats/:id/invite-link",
+            post(create_invite_link).delete(delete_invite_link),
+        )
+        .route("/chats/join/:slug", post(join_by_slug))
+        .route("/chats/:id/rotate-key", post(rotate_group_key))
+        .route("/chats/:id/transfer-ownership", post(transfer_ownership))
         .route_layer(middleware::from_fn_with_state(
             auth_middleware_state.clone(),
             auth_middleware,

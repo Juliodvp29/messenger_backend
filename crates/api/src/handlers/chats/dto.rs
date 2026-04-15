@@ -140,6 +140,7 @@ pub struct RemoveReactionResponse {
 #[derive(Debug, Deserialize)]
 pub struct UpdateChatRequest {
     pub name: Option<String>,
+    pub description: Option<String>,
     pub avatar_url: Option<String>,
 }
 
@@ -148,6 +149,7 @@ pub struct UpdateChatResponse {
     pub id: Uuid,
     pub chat_type: String,
     pub name: Option<String>,
+    pub description: Option<String>,
     pub avatar_url: Option<String>,
     pub updated_at: DateTime<Utc>,
 }

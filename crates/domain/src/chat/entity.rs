@@ -31,11 +31,54 @@ impl ChatType {
     }
 }
 
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum ParticipantRole {
+    Member = 1,
+    Moderator = 2,
+    Admin = 3,
+    Owner = 4,
+}
+
+impl ParticipantRole {
+    pub fn as_db_str(self) -> &'static str {
+        match self {
+            Self::Member => "member",
+            Self::Moderator => "moderator",
+            Self::Admin => "admin",
+            Self::Owner => "owner",
+        }
+    }
+
+    pub fn from_db_str(s: &str) -> Option<Self> {
+        match s {
+            "member" => Some(Self::Member),
+            "moderator" => Some(Self::Moderator),
+            "admin" => Some(Self::Admin),
+            "owner" => Some(Self::Owner),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ParticipantDetail {
+    pub user_id: Uuid,
+    pub chat_id: Uuid,
+    pub role: ParticipantRole,
+    pub encryption_key_enc: Option<String>,
+    pub added_by: Option<Uuid>,
+    pub joined_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone)]
 pub struct Chat {
     pub id: Uuid,
     pub chat_type: ChatType,
     pub name: Option<String>,
+    pub description: Option<String>,
     pub avatar_url: Option<String>,
     pub created_by: Option<Uuid>,
     pub created_at: DateTime<Utc>,

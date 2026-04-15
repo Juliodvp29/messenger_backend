@@ -1,4 +1,6 @@
-use super::entity::{Chat, ChatMessage, ChatPreview, PendingAttachment};
+use super::entity::{
+    Chat, ChatMessage, ChatPreview, ParticipantDetail, ParticipantRole, PendingAttachment,
+};
 use super::notifications::{
     ChatSettings, NewNotification, Notification, NotificationCursor, UpdateChatSettings,
 };
@@ -148,6 +150,7 @@ pub trait ChatRepository: Send + Sync {
         user_id: Uuid,
         chat_id: Uuid,
         name: Option<String>,
+        description: Option<String>,
         avatar_url: Option<String>,
     ) -> DomainResult<Chat>;
 
@@ -199,4 +202,79 @@ pub trait ChatRepository: Send + Sync {
         chat_id: Uuid,
         settings: UpdateChatSettings,
     ) -> DomainResult<ChatSettings>;
+
+    // ---- Phase 9: Group / Channel management ----------------------------
+
+    /// Returns the role of an active participant, or None if not a member.
+    async fn get_participant_role(
+        &self,
+        user_id: Uuid,
+        chat_id: Uuid,
+    ) -> DomainResult<Option<ParticipantRole>>;
+
+    /// Returns all active participants with full details.
+    async fn get_participants_detail(
+        &self,
+        actor_id: Uuid,
+        chat_id: Uuid,
+    ) -> DomainResult<Vec<ParticipantDetail>>;
+
+    /// Adds a user to a group. Actor must be admin or owner.
+    async fn add_participant(
+        &self,
+        chat_id: Uuid,
+        actor_id: Uuid,
+        user_id: Uuid,
+        encryption_key_enc: Option<String>,
+    ) -> DomainResult<ParticipantDetail>;
+
+    /// Soft-deletes a participant (sets left_at). Actor must outrank target.
+    /// Returns true when group key rotation is required (anytime a member is removed).
+    async fn remove_participant(
+        &self,
+        chat_id: Uuid,
+        actor_id: Uuid,
+        target_id: Uuid,
+    ) -> DomainResult<bool>;
+
+    /// Changes a participant's role. Actor must outrank both current and new role.
+    async fn update_participant_role(
+        &self,
+        chat_id: Uuid,
+        actor_id: Uuid,
+        target_id: Uuid,
+        new_role: ParticipantRole,
+    ) -> DomainResult<ParticipantDetail>;
+
+    /// Generates (or clears) the invite slug. Pass Some("") to delete, None to auto-generate.
+    async fn set_invite_link(
+        &self,
+        chat_id: Uuid,
+        actor_id: Uuid,
+        slug: Option<String>,
+    ) -> DomainResult<Option<String>>;
+
+    /// Finds a chat by its public invite slug (no auth required).
+    async fn find_chat_by_slug(&self, slug: &str) -> DomainResult<Option<Chat>>;
+
+    /// Joins a chat via invite link. User is inserted as `member`.
+    async fn join_by_invite(&self, chat_id: Uuid, user_id: Uuid)
+    -> DomainResult<ParticipantDetail>;
+
+    /// Rotates the group key for a set of members. Actor must be admin or owner.
+    /// `keys` is a list of (user_id, new_encryption_key_enc) pairs.
+    async fn rotate_group_key(
+        &self,
+        chat_id: Uuid,
+        actor_id: Uuid,
+        keys: Vec<(Uuid, String)>,
+    ) -> DomainResult<usize>;
+
+    /// Transfers ownership to another member (current owner only).
+    async fn transfer_ownership(
+        &self,
+        chat_id: Uuid,
+        current_owner_id: Uuid,
+        new_owner_id: Uuid,
+    ) -> DomainResult<()>;
 }
