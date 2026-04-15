@@ -18,7 +18,8 @@ Backend modular en Rust para una aplicación de mensajería estilo WhatsApp/Tele
 | 08 | Notificaciones | ✅ Completado |
 | 09 | Gestión de Grupos y Canales | ✅ Completado |
 | 10 | Búsqueda y Contactos | ✅ Completado |
-| 11-13 | Performance, Hardening, etc. | ⏳ Pendiente |
+| 11 | Performance y Caché | ✅ Completado |
+| 12-13 | Hardening, Despliegue | ⏳ Pendiente |
 
 ## Arquitectura
 
@@ -380,6 +381,75 @@ curl -X POST http://localhost:3000/auth/login/verify \
   -H "Content-Type: application/json" \
   -d '{"phone":"+573001234567","code":"123456","device_id":"uuid","device_name":"TestPhone","device_type":"android"}'
 ```
+
+## Endpoints — Fase 11 (Performance y Caché)
+
+Redis se utiliza en 7 roles distintos para optimizar el rendimiento del sistema:
+
+| Rol | Clave | Descripción | TTL |
+|-----|-------|-------------|-----|
+| 1 | `profile:{user_id}` | Cache de perfiles públicos | 5 min |
+| 2 | `session:{session_id}` | Validación de sesión activa | 15 min |
+| 3 | `presence:{user_id}` | Estado online/offline (WS) | 65s |
+| 4 | `rate:{endpoint}:{id}` | Rate limiting (sliding window) | 60s |
+| 5 | `user:{user_id}:events` | Pub/Sub para eventos | N/A |
+| 6 | `push:queue` | Cola de notificaciones push | N/A |
+| 7 | `refresh:{hash}` | Refresh tokens (rotación) | 7 días |
+
+### Rate Limiting
+
+El rate limiting usa sliding window con script Lua para operaciones atómicas:
+
+```bash
+# Headers de rate limit en respuestas
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 87
+X-RateLimit-Reset: 1705329600
+
+# Si se excede el límite
+HTTP 429 Too Many Requests
+Retry-After: 23
+```
+
+### Límites configurados
+
+| Endpoint | Límite | Ventana |
+|----------|--------|---------|
+| `/auth/login`, `/auth/register` | 10 | 60s |
+| `/users/search` | 30 | 60s |
+| Envío de mensajes | 100 | 60s |
+| Upload de archivos | 20 | 60s |
+| API general | 300 | 60s |
+
+### Cache de Perfiles
+
+Los perfiles de usuario se cachean en Redis para reducir consultas a la DB:
+
+```bash
+# Obtener perfil (primero cache, luego DB)
+curl -X GET http://localhost:3000/users/:id/profile \
+  -H "Authorization: Bearer $TOKEN"
+
+# Invalidar cache al actualizar perfil
+# Ocurre automáticamente tras TTL de 5 minutos
+```
+
+### Optimización de PostgreSQL
+
+La migración `018_performance_autovacuum.sql` configura autovacuum para tablas de alta escritura:
+
+```sql
+-- messages: writes más frecuentes
+ALTER TABLE messages SET (
+    autovacuum_vacuum_scale_factor = 0.01,
+    autovacuum_analyze_scale_factor = 0.005
+);
+```
+
+Los índices existentes optimizan las queries más frecuentes:
+- `idx_messages_chat_created` — paginación de mensajes
+- `idx_users_phone` — búsqueda por teléfono
+- `idx_chat_participants_active` — miembros activos de grupo
 
 ## Inicio Rápido
 
