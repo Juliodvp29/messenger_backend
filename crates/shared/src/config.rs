@@ -1,11 +1,21 @@
 use serde::Deserialize;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum AppEnv {
     Development,
     Staging,
     Production,
+}
+
+impl AppEnv {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AppEnv::Development => "development",
+            AppEnv::Staging => "staging",
+            AppEnv::Production => "production",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

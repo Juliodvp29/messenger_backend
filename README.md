@@ -19,7 +19,8 @@ Backend modular en Rust para una aplicación de mensajería estilo WhatsApp/Tele
 | 09 | Gestión de Grupos y Canales | ✅ Completado |
 | 10 | Búsqueda y Contactos | ✅ Completado |
 | 11 | Performance y Caché | ✅ Completado |
-| 12-13 | Hardening, Despliegue | ⏳ Pendiente |
+| 12 | Observabilidad y Hardening | ✅ Completado |
+| 13 | Despliegue y Producción | ⏳ Pendiente |
 
 ## Arquitectura
 
@@ -450,6 +451,39 @@ Los índices existentes optimizan las queries más frecuentes:
 - `idx_messages_chat_created` — paginación de mensajes
 - `idx_users_phone` — búsqueda por teléfono
 - `idx_chat_participants_active` — miembros activos de grupo
+
+## Endpoints — Fase 12 (Observabilidad y Hardening)
+
+Implementación de métricas con Prometheus, tracing con request ID y monitoreo de infraestructura.
+
+| Método | Endpoint | Descripción | Auth |
+|--------|----------|-----------|------|
+| GET | `/metrics` | Exportador de métricas para Prometheus | No |
+
+### Instrumentación de Métricas
+
+Se han implementado métricas clave para monitorizar el estado y uso del sistema:
+
+| Métrica | Tipo | Descripción |
+|---------|------|-------------|
+| `messenger_http_request_duration_seconds` | Histogram | Latencia de peticiones HTTP por método y ruta |
+| `messenger_auth_attempts_total` | Counter | Intentos de login y registro por tipo y resultado |
+| `messenger_messages_sent_total` | Counter | Total de mensajes enviados exitosamente |
+| `messenger_active_ws_connections` | Gauge | Conexiones WebSocket activas actualmente |
+| `messenger_db_pool_active` | Gauge | Conexiones activas en el pool de PostgreSQL |
+| `messenger_db_pool_idle` | Gauge | Conexiones idle en el pool de PostgreSQL |
+| `messenger_redis_connected_clients` | Gauge | Número de clientes conectados a Redis |
+
+### Trazabilidad (Request ID)
+
+Cada petición genera un `request_id` (UUID v4) que se propaga en:
+1. **Logs**: Cada línea de log incluye el context de la petición.
+2. **Response Headers**: Se incluye el header `x-request-id` para facilitar el debug desde el cliente.
+3. **Métricas**: Las latencias se pueden asociar a tipos de peticiones.
+
+### Monitoreo en Tiempo Real
+
+El sistema incluye un **Background Metrics Worker** que actualiza cada 15 segundos el estado de los pools de datos, garantizando que el dashboard de Grafana refleje la carga real sin penalizar el rendimiento de los handlers.
 
 ## Inicio Rápido
 

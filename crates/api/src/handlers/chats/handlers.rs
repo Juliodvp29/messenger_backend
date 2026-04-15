@@ -16,6 +16,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::error::ApiError;
+use crate::services::metrics::MetricsExtension;
 use crate::handlers::chats::dto::{
     AddReactionRequest, ChatCursorDto, ChatPreviewResponse, ChatResponse, ChatSettingsResponse,
     CreateChatRequest, DeleteChatResponse, DeleteMessageResponse, DeleteReadNotificationsResponse,
@@ -118,10 +119,13 @@ pub async fn list_chats(
 
 pub async fn send_message(
     State(state): State<ChatsState>,
+    Extension(metrics): Extension<MetricsExtension>,
     Extension(auth): Extension<AuthenticatedUser>,
     Path(chat_id): Path<Uuid>,
     Json(req): Json<SendMessageRequest>,
 ) -> Result<Response, ApiError> {
+    // Record metric
+    metrics.0.read().messages_sent_total.inc();
     let message = state
         .chat_repo
         .send_message(

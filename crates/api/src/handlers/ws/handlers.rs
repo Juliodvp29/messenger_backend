@@ -1,6 +1,7 @@
+use crate::services::metrics::MetricsExtension;
 use axum::{
     extract::{
-        Query, State,
+        Extension, Query, State,
         ws::{WebSocket, WebSocketUpgrade},
     },
     response::IntoResponse,
@@ -22,6 +23,7 @@ use shared::error::DomainError;
 
 pub async fn ws_handler(
     Query(params): Query<WsParams>,
+    Extension(metrics): Extension<MetricsExtension>,
     State(state): State<WsRouterState>,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
@@ -43,10 +45,22 @@ pub async fn ws_handler(
         }
     };
 
-    Ok(ws.on_upgrade(move |socket| handle_socket(socket, user_id, state.ws_state.clone())))
+    Ok(
+        ws.on_upgrade(move |socket| {
+            handle_socket(socket, user_id, state.ws_state.clone(), metrics)
+        }),
+    )
 }
 
-async fn handle_socket(socket: WebSocket, user_id: Uuid, ws_state: Arc<WsState>) {
+async fn handle_socket(
+    socket: WebSocket,
+    user_id: Uuid,
+    ws_state: Arc<WsState>,
+    metrics: MetricsExtension,
+) {
+    // Increment active connections
+    metrics.0.read().active_ws_connections.inc();
+
     let (mut write, mut read) = socket.split();
 
     let (tx, mut rx) = mpsc::channel::<String>(100);
@@ -91,6 +105,7 @@ async fn handle_socket(socket: WebSocket, user_id: Uuid, ws_state: Arc<WsState>)
     let redis_for_cleanup = redis.clone();
     let user_repo = ws_state.user_repo.clone();
     let ws_state_clone = ws_state.clone();
+    let metrics_for_cleanup = metrics.clone();
 
     tokio::spawn(async move {
         while let Some(msg) = read.next().await {
@@ -115,6 +130,9 @@ async fn handle_socket(socket: WebSocket, user_id: Uuid, ws_state: Arc<WsState>)
                 _ => {}
             }
         }
+
+        // Decrement active connections
+        metrics_for_cleanup.0.read().active_ws_connections.dec();
 
         if let Some(entry) = connections_for_cleanup.get(&user_id_for_read) {
             let mut conns = entry.value().clone();

@@ -10,6 +10,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::error::ApiError;
+use crate::services::metrics::MetricsExtension;
 use crate::middleware::auth::AuthenticatedUser;
 use crate::services::jwt::{JwtService, RefreshSession};
 use crate::services::otp::OtpService;
@@ -204,9 +205,12 @@ async fn issue_tokens(
 
 pub async fn register(
     State(state): State<AuthState>,
+    Extension(metrics): Extension<MetricsExtension>,
     ConnectInfo(client_ip): ConnectInfo<SocketAddr>,
     Json(req): Json<RegisterRequest>,
 ) -> Result<Response, ApiError> {
+    // Record attempt
+    metrics.0.read().auth_attempts_total.inc();
     let phone =
         PhoneNumber::new(req.phone.clone()).map_err(|e| DomainError::Validation(e.to_string()))?;
 
@@ -298,9 +302,12 @@ pub async fn verify_phone(
 
 pub async fn login(
     State(state): State<AuthState>,
+    Extension(metrics): Extension<MetricsExtension>,
     ConnectInfo(client_ip): ConnectInfo<SocketAddr>,
     Json(req): Json<LoginRequest>,
 ) -> Result<Response, ApiError> {
+    // Record attempt
+    metrics.0.read().auth_attempts_total.inc();
     let phone =
         PhoneNumber::new(req.phone.clone()).map_err(|e| DomainError::Validation(e.to_string()))?;
 
