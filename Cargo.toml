@@ -26,7 +26,7 @@ tower = { version = "0.4" }
 tower-http = { version = "0.5", features = ["cors", "trace", "compression-gzip"] }
 
 # Base de datos
-sqlx = { version = "0.8", default-features = false, features = ["postgres", "runtime-tokio-rustls", "macros", "uuid", "chrono", "json", "migrate"] }
+sqlx = { version = "0.8", default-features = false, features = ["postgres", "runtime-tokio-native-tls", "macros", "uuid", "chrono", "json", "migrate"] }
 
 # Redis
 redis = { version = "0.25", features = ["tokio-comp", "connection-manager", "aio"] }
@@ -61,7 +61,7 @@ parking_lot = "0.12"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
-prometheus = "0.13"
+prometheus = { version = "0.13", default-features = false }
 
 # AWS S3
 aws-sdk-s3 = "1"
@@ -82,3 +82,4 @@ api = { path = "crates/api" }
 domain = { path = "crates/domain" }
 infrastructure = { path = "crates/infrastructure" }
 shared = { path = "crates/shared" }
+
