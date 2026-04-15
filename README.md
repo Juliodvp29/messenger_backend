@@ -17,7 +17,8 @@ Backend modular en Rust para una aplicación de mensajería estilo WhatsApp/Tele
 | 07 | Stories y Reacciones | ✅ Completado |
 | 08 | Notificaciones | ✅ Completado |
 | 09 | Gestión de Grupos y Canales | ✅ Completado |
-| 10-13 | Búsqueda, Performance, etc. | ⏳ Pendiente |
+| 10 | Búsqueda y Contactos | ✅ Completado |
+| 11-13 | Performance, Hardening, etc. | ⏳ Pendiente |
 
 ## Arquitectura
 
@@ -275,6 +276,45 @@ Administración avanzada de miembros, roles y seguridad en grupos/canales con ci
 ### Invitaciones por Link
 
 Cuando un usuario se une mediante un link de invitación (`GET /chats/join/:slug`), si el grupo es E2EE, el servidor retornará `key_rotation_required: true`. Un administrador deberá ejecutar `/rotate-key` para proveer la llave del grupo al nuevo miembro de forma segura.
+
+## Endpoints — Fase 10 (Búsqueda y Contactos)
+
+Gestión de la agenda de contactos, bloqueo de usuarios y búsqueda global con protección de privacidad.
+
+| Método | Endpoint | Descripción | Auth |
+|--------|----------|-----------|------|
+| GET | `/users/search` | Búsqueda global de usuarios por username/teléfono | Bearer |
+| GET | `/users/me/profile` | Obtener mi perfil completo | Bearer |
+| GET | `/users/:id/profile` | Obtener perfil público de otro usuario | Bearer |
+| GET | `/contacts` | Listar mi agenda de contactos | Bearer |
+| POST | `/contacts` | Añadir un contacto manualmente | Bearer |
+| PATCH | `/contacts/:id` | Editar nombre local de un contacto | Bearer |
+| DELETE | `/contacts/:id` | Eliminar de la agenda | Bearer |
+| POST | `/contacts/sync` | Sincronización masiva (Privacy-Preserving) | Bearer |
+| GET | `/blocks` | Listar usuarios bloqueados | Bearer |
+| POST | `/blocks/:user_id` | Bloquear usuario | Bearer |
+| DELETE | `/blocks/:user_id` | Desbloquear usuario | Bearer |
+
+### Sincronización y Privacidad
+
+Para proteger la privacidad de los usuarios, la sincronización de contactos no envía los números de teléfono en texto plano. Se utiliza un mecanismo de **Hashing con Sal**:
+
+1. El cliente solicita el `salt` global (actualmente gestionado por el sistema).
+2. El cliente concatena el número en formato E.164 con el salt: `hash = SHA256(phone + salt)`.
+3. El servidor busca coincidencias contra los hashes pre-calculados en la base de datos.
+
+```bash
+# Ejemplo de sincronización
+curl -X POST http://localhost:3000/contacts/sync \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "contacts": [
+      { "phone_hash": "e3b0c442...", "local_name": "Juan Pérez" },
+      { "phone_hash": "8feb2331...", "local_name": "Mamá" }
+    ]
+  }'
+```
 
 ## Endpoints — Fase 04 (Cifrado E2E)
 
