@@ -11,6 +11,7 @@ use crate::error::ApiError;
 use crate::middleware::auth::AuthenticatedUser;
 use crate::services::otp::OtpService;
 use domain::user::value_objects::UserId;
+use infrastructure::cache::ProfileCacheRef;
 use infrastructure::repositories::user::PostgresUserRepository;
 use shared::error::DomainError;
 
@@ -20,6 +21,7 @@ use super::dto::{SearchQuery, UserProfileResponse, UserSearchResult};
 pub struct UsersState {
     pub user_repo: Arc<PostgresUserRepository>,
     pub otp_service: Arc<OtpService>,
+    pub profile_cache: Option<ProfileCacheRef>,
 }
 
 pub async fn search_users(
@@ -102,11 +104,41 @@ pub async fn get_user_profile(
         return Err(DomainError::NotFound("User not found".to_string()).into());
     }
 
+    if let Some(ref cache) = state.profile_cache {
+        if let Ok(Some(cached)) = cache.get(&user_id).await {
+            return Ok((
+                StatusCode::OK,
+                Json(UserProfileResponse {
+                    id: cached.id.to_string(),
+                    username: cached.username,
+                    display_name: cached.display_name,
+                    bio: cached.bio,
+                    avatar_url: cached.avatar_url,
+                    status_text: cached.status_text,
+                }),
+            )
+                .into_response());
+        }
+    }
+
     let profile = state
         .user_repo
         .find_profile_by_id(&user_id)
         .await?
         .ok_or_else(|| DomainError::NotFound("User not found".to_string()))?;
+
+    if let Some(ref cache) = state.profile_cache {
+        let _ = cache
+            .set(&infrastructure::cache::CachedProfile {
+                id: profile.0,
+                username: profile.1.clone(),
+                display_name: profile.2.clone(),
+                bio: profile.3.clone(),
+                avatar_url: profile.4.clone(),
+                status_text: profile.5.clone(),
+            })
+            .await;
+    }
 
     Ok((
         StatusCode::OK,
@@ -126,11 +158,41 @@ pub async fn get_my_profile(
     State(state): State<UsersState>,
     Extension(auth): Extension<AuthenticatedUser>,
 ) -> Result<Response, ApiError> {
+    if let Some(ref cache) = state.profile_cache {
+        if let Ok(Some(cached)) = cache.get(&auth.user_id).await {
+            return Ok((
+                StatusCode::OK,
+                Json(UserProfileResponse {
+                    id: cached.id.to_string(),
+                    username: cached.username,
+                    display_name: cached.display_name,
+                    bio: cached.bio,
+                    avatar_url: cached.avatar_url,
+                    status_text: cached.status_text,
+                }),
+            )
+                .into_response());
+        }
+    }
+
     let profile = state
         .user_repo
         .find_profile_by_id(&auth.user_id)
         .await?
         .ok_or_else(|| DomainError::NotFound("User not found".to_string()))?;
+
+    if let Some(ref cache) = state.profile_cache {
+        let _ = cache
+            .set(&infrastructure::cache::CachedProfile {
+                id: profile.0,
+                username: profile.1.clone(),
+                display_name: profile.2.clone(),
+                bio: profile.3.clone(),
+                avatar_url: profile.4.clone(),
+                status_text: profile.5.clone(),
+            })
+            .await;
+    }
 
     Ok((
         StatusCode::OK,

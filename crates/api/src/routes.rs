@@ -38,6 +38,7 @@ use crate::middleware::auth::{AuthMiddlewareState, auth_middleware};
 use crate::services::jwt::JwtService;
 use crate::services::otp::OtpService;
 use crate::services::storage::S3StorageService;
+use infrastructure::cache::ProfileCache;
 use infrastructure::repositories::chat::PostgresChatRepository;
 use infrastructure::repositories::contact::PostgresContactRepository;
 use infrastructure::repositories::keys::PostgresKeyRepository;
@@ -121,9 +122,12 @@ pub fn create_router(
         user_repo: user_repo.clone(),
     };
 
+    let profile_cache = Arc::new(ProfileCache::new(redis_manager.clone()));
+
     let users_state = UsersState {
         user_repo: user_repo.clone(),
         otp_service: otp_service.clone(),
+        profile_cache: Some(profile_cache),
     };
 
     let ws_state = Arc::new(WsState {
