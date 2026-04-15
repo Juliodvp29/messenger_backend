@@ -57,12 +57,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         redis::cmd("INFO").arg("clients").query(&mut conn);
                     if let Ok(info_str) = info {
                         for line in info_str.lines() {
-                            if line.starts_with("connected_clients:") {
-                                if let Some(count_str) = line.split(':').nth(1) {
-                                    if let Ok(count) = count_str.trim().parse::<i64>() {
-                                        m.redis_connected_clients.set(count);
-                                    }
-                                }
+                            if let Some(count) = line
+                                .strip_prefix("connected_clients:")
+                                .and_then(|s| s.trim().parse::<i64>().ok())
+                            {
+                                m.redis_connected_clients.set(count);
                             }
                         }
                     }

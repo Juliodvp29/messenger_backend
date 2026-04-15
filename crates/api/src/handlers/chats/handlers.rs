@@ -16,7 +16,6 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::error::ApiError;
-use crate::services::metrics::MetricsExtension;
 use crate::handlers::chats::dto::{
     AddReactionRequest, ChatCursorDto, ChatPreviewResponse, ChatResponse, ChatSettingsResponse,
     CreateChatRequest, DeleteChatResponse, DeleteMessageResponse, DeleteReadNotificationsResponse,
@@ -28,6 +27,7 @@ use crate::handlers::chats::dto::{
     UpdateChatRequest, UpdateChatResponse, UpdateChatSettingsRequest,
 };
 use crate::middleware::auth::AuthenticatedUser;
+use crate::services::metrics::MetricsExtension;
 use crate::services::push::{PRESENCE_KEY_PREFIX, PushNotificationJob, enqueue_push_notification};
 use infrastructure::repositories::chat::PostgresChatRepository;
 

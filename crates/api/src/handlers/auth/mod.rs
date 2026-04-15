@@ -10,9 +10,9 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::error::ApiError;
-use crate::services::metrics::MetricsExtension;
 use crate::middleware::auth::AuthenticatedUser;
 use crate::services::jwt::{JwtService, RefreshSession};
+use crate::services::metrics::MetricsExtension;
 use crate::services::otp::OtpService;
 use domain::user::entity::User;
 use domain::user::repository::UserRepository;
