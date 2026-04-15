@@ -1749,7 +1749,6 @@ meta: >
   La sincronización de agenda revela solo quiénes están registrados,
   sin revelar quiénes NO están. La privacidad es respetada.
 
-gitflow_rama: "feature/FASE-10-busqueda"
 dependencias: ["FASE-03"]
 
 endpoints:

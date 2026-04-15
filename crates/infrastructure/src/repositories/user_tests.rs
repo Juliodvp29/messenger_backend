@@ -6,7 +6,7 @@ use sqlx::PgPool;
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn test_create_user(pool: PgPool) -> sqlx::Result<()> {
-    let repo = PostgresUserRepository::new(pool.clone());
+    let repo = PostgresUserRepository::new(pool.clone(), None);
     let phone = PhoneNumber::new("+573001111111".to_string()).unwrap();
 
     let user = User::new(
@@ -27,7 +27,7 @@ async fn test_create_user(pool: PgPool) -> sqlx::Result<()> {
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn test_find_by_phone(pool: PgPool) -> sqlx::Result<()> {
-    let repo = PostgresUserRepository::new(pool.clone());
+    let repo = PostgresUserRepository::new(pool.clone(), None);
     let phone = PhoneNumber::new("+573001222222".to_string()).unwrap();
 
     let user = User::new(
@@ -50,7 +50,7 @@ async fn test_find_by_phone(pool: PgPool) -> sqlx::Result<()> {
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn test_update_user(pool: PgPool) -> sqlx::Result<()> {
-    let repo = PostgresUserRepository::new(pool.clone());
+    let repo = PostgresUserRepository::new(pool.clone(), None);
     let phone = PhoneNumber::new("+573001333333".to_string()).unwrap();
 
     let user = User::new(
@@ -81,7 +81,7 @@ async fn test_update_user(pool: PgPool) -> sqlx::Result<()> {
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn test_delete_soft_user(pool: PgPool) -> sqlx::Result<()> {
-    let repo = PostgresUserRepository::new(pool.clone());
+    let repo = PostgresUserRepository::new(pool.clone(), None);
     let phone = PhoneNumber::new("+573001444444".to_string()).unwrap();
 
     let user = User::new(
