@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE users SET \n                username = $2,\n                phone = $3,\n                phone_hash = $4,\n                email = $5,\n                status_text = $6,\n                two_fa_enabled = $7,\n                two_fa_secret = $8,\n                is_active = $9,\n                last_seen_at = $10,\n                updated_at = NOW()\n            WHERE id = $1 AND deleted_at IS NULL\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Varchar",
+        "Text",
+        "Text",
+        "Bool",
+        "Text",
+        "Bool",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b545936b145f729b468ffc997819cb3b2d04a129ad58c95f932af93027c422d1"
+}
