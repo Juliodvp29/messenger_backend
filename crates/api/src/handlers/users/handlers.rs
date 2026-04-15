@@ -80,7 +80,7 @@ pub async fn get_user_profile(
     Extension(auth): Extension<AuthenticatedUser>,
     Path(user_id): Path<Uuid>,
 ) -> Result<Response, ApiError> {
-    let target_user_id = UserId(user_id);
+    let _target_user_id = UserId(user_id);
 
     let is_blocked = state
         .user_repo
