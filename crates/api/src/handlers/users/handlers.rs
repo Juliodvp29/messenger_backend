@@ -104,21 +104,21 @@ pub async fn get_user_profile(
         return Err(DomainError::NotFound("User not found".to_string()).into());
     }
 
-    if let Some(ref cache) = state.profile_cache {
-        if let Ok(Some(cached)) = cache.get(&user_id).await {
-            return Ok((
-                StatusCode::OK,
-                Json(UserProfileResponse {
-                    id: cached.id.to_string(),
-                    username: cached.username,
-                    display_name: cached.display_name,
-                    bio: cached.bio,
-                    avatar_url: cached.avatar_url,
-                    status_text: cached.status_text,
-                }),
-            )
-                .into_response());
-        }
+    if let Some(ref cache) = state.profile_cache
+        && let Ok(Some(cached)) = cache.get(&user_id).await
+    {
+        return Ok((
+            StatusCode::OK,
+            Json(UserProfileResponse {
+                id: cached.id.to_string(),
+                username: cached.username,
+                display_name: cached.display_name,
+                bio: cached.bio,
+                avatar_url: cached.avatar_url,
+                status_text: cached.status_text,
+            }),
+        )
+            .into_response());
     }
 
     let profile = state
@@ -158,21 +158,21 @@ pub async fn get_my_profile(
     State(state): State<UsersState>,
     Extension(auth): Extension<AuthenticatedUser>,
 ) -> Result<Response, ApiError> {
-    if let Some(ref cache) = state.profile_cache {
-        if let Ok(Some(cached)) = cache.get(&auth.user_id).await {
-            return Ok((
-                StatusCode::OK,
-                Json(UserProfileResponse {
-                    id: cached.id.to_string(),
-                    username: cached.username,
-                    display_name: cached.display_name,
-                    bio: cached.bio,
-                    avatar_url: cached.avatar_url,
-                    status_text: cached.status_text,
-                }),
-            )
-                .into_response());
-        }
+    if let Some(ref cache) = state.profile_cache
+        && let Ok(Some(cached)) = cache.get(&auth.user_id).await
+    {
+        return Ok((
+            StatusCode::OK,
+            Json(UserProfileResponse {
+                id: cached.id.to_string(),
+                username: cached.username,
+                display_name: cached.display_name,
+                bio: cached.bio,
+                avatar_url: cached.avatar_url,
+                status_text: cached.status_text,
+            }),
+        )
+            .into_response());
     }
 
     let profile = state
