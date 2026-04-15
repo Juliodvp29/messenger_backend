@@ -30,25 +30,29 @@ El proyecto utiliza un **Cargo Workspace** con la siguiente estructura:
 crates/
 ├── api/
 │   ├── src/
-│   │   ├── handlers/   # auth, chats, messages, etc.
+│   │   ├── handlers/   # auth, chats, messages, stories, etc.
 │   │   ├── middleware/ # auth, rate_limit, logging
+│   │   ├── services/   # jwt, otp, push, storage, ws
 │   │   ├── routes.rs
 │   │   └── main.rs
 ├── domain/
 │   ├── src/
-│   │   ├── models/     # User, Chat, Message, etc.
-│   │   ├── errors.rs
-│   │   └── value_objects/
+│   │   ├── chat/       # Entidades y repositorios de chat/mensajes
+│   │   ├── stories/    # Entidades y repositorios de historias
+│   │   ├── user/       # Usuario y gestión de perfiles
+│   │   ├── contact/    # Gestión de contactos
+│   │   └── keys/       # Modelos para cifrado E2E (X3DH)
 ├── infrastructure/
 │   ├── src/
-│   │   ├── db/         # Queries sqlx, repositorios
-│   │   ├── redis/      # Cliente Redis, pub/sub, cache
-│   │   ├── storage/   # MinIO/S3
-│   │   └── email/     # SMTP
+│   │   ├── repositories/ # Implementaciones Postgres de repositorios
+│   │   ├── db/           # Pooled connection Postgres
+│   │   ├── redis/        # Cliente Redis y Pub/Sub
+│   │   ├── storage/      # MinIO/S3 Adapter
+│   │   └── email/        # SMTP con Lettre
 └── shared/
     ├── src/
-    │   ├── config.rs  # Configuracion tipada
-    │   └── types.rs # Tipos comunes
+    │   ├── config.rs   # Configuración tipada (env)
+    │   └── error.rs    # AppError centralizado
 ```
 
 ## Stack Tecnológico
@@ -215,10 +219,10 @@ Push notifications y notificaciones in-app.
 | Método | Endpoint | Descripción | Auth |
 |--------|----------|-----------|------|
 | GET | `/notifications` | Listar notificaciones | Bearer |
-| PATCH | `/notifications/:id/read` | Marcar como leída | Bearer |
+| PATCH | `/notifications/:id` | Marcar notificación como leída | Bearer |
 | PATCH | `/notifications/read-all` | Marcar todas como leídas | Bearer |
-| DELETE | `/notifications/read` | Eliminar leídas | Bearer |
-| PATCH | `/chats/:id/settings` | Configurar chat (silenciar, pinear) | Bearer |
+| DELETE | `/notifications/read` | Eliminar notificaciones leídas | Bearer |
+| PATCH | `/chats/:id/settings` | Configurar chat (silenciar, pinear, archivar) | Bearer |
 
 ### Configuración de Chat
 
