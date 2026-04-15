@@ -16,7 +16,8 @@ Backend modular en Rust para una aplicación de mensajería estilo WhatsApp/Tele
 | 06 | Tiempo Real (WebSockets) | ✅ Completado |
 | 07 | Stories y Reacciones | ✅ Completado |
 | 08 | Notificaciones | ✅ Completado |
-| 09-13 | Grupos, Búsqueda, Performance, etc. | ⏳ Pendiente |
+| 09 | Gestión de Grupos y Canales | ✅ Completado |
+| 10-13 | Búsqueda, Performance, etc. | ⏳ Pendiente |
 
 ## Arquitectura
 
@@ -247,6 +248,33 @@ El servidor envía notificaciones push cuando el usuario está offline:
 - **APNs** (Apple Push Notification service) para iOS
 
 > **Nota**: El payload del push NUNCA incluye el contenido del mensaje por privacidad.
+> 
+## Endpoints — Fase 09 (Gestión de Grupos y Canales)
+
+Administración avanzada de miembros, roles y seguridad en grupos/canales con cifrado E2E.
+
+| Método | Endpoint | Descripción | Auth |
+|--------|----------|-----------|------|
+| GET | `/chats/:id/participants` | Listar miembros del grupo | Bearer |
+| POST | `/chats/:id/participants` | Añadir miembro al grupo | Bearer |
+| DELETE | `/chats/:id/participants/:user_id` | Eliminar miembro del grupo | Bearer |
+| PATCH | `/chats/:id/participants/:user_id/role` | Cambiar rol (member, moderator, admin) | Bearer |
+| POST | `/chats/:id/invite-link` | Crear o refrescar link de invitación | Bearer |
+| DELETE | `/chats/:id/invite-link` | Eliminar link de invitación | Bearer |
+| POST | `/chats/join/:slug` | Unirse a grupo mediante link | Bearer |
+| POST | `/chats/:id/rotate-key` | Rotar llave del grupo (E2EE) | Bearer |
+| POST | `/chats/:id/transfer-ownership` | Traspasar propiedad del grupo | Bearer |
+
+### Roles de Participante
+
+- `owner`: Creador del grupo (permisos totales, solo 1).
+- `admin`: Puede gestionar miembros y settings.
+- `moderator`: Puede gestionar mensajes de otros.
+- `member`: Participante estándar.
+
+### Invitaciones por Link
+
+Cuando un usuario se une mediante un link de invitación (`GET /chats/join/:slug`), si el grupo es E2EE, el servidor retornará `key_rotation_required: true`. Un administrador deberá ejecutar `/rotate-key` para proveer la llave del grupo al nuevo miembro de forma segura.
 
 ## Endpoints — Fase 04 (Cifrado E2E)
 
