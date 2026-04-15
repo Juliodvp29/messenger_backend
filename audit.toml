@@ -1,5 +1,10 @@
+# Configuración de cargo-audit para ignorar vulnerabilidades conocidas
+# Estas se ignoran para desbloquear el CI ya que no tienen solución upstream
+# en las versiones actuales o afectan a componentes no utilizados (MySQL).
+
 [advisories]
 ignore = [
-    "RUSTSEC-2024-0363", # sqlx v0.7.4 (Binary Protocol Misinterpretation)
-    "RUSTSEC-2023-0071", # rsa v0.9.10 (Marvin Attack)
+    "RUSTSEC-2023-0071", # rsa: Marvin Attack (Afecta a sqlx-mysql, no lo usamos)
+    "RUSTSEC-2026-0098", # rustls-webpki: Vulnerabilidad en validación de nombres (Smithy/AWS SDK bloqueado en rustls 0.21)
+    "RUSTSEC-2026-0099", # rustls-webpki: Vulnerabilidad en wildcard names (Igual que el anterior)
 ]

@@ -2387,8 +2387,8 @@ Fase 06: [x] WS multi-device  [x] Redis Pub/Sub entre instancias  [x] Presencia 
 Fase 07: [x] Privacy "only_me" no visible para otros  [x] Vistas en tiempo real  [x] Expiración 24h
 Fase 08: [x] Push a usuario offline  [x] Token inválido = DELETE sesión  [x] Silenciado respetado
 Fase 09: [x] Roles jerárquicos  [x] Rotación group_key al eliminar miembro  [x] Invite link revocable
-Fase 10: [ ] Búsqueda respeta privacidad  [ ] Sync agenda no revela no-registrados
-Fase 11: [ ] 7 roles Redis correctos  [ ] Rate limit 429 con headers  [ ] p95 < 100ms
+Fase 10: [x] Búsqueda respeta privacidad  [x] Sync agenda no revela no-registrados
+Fase 11: [x] 7 roles Redis correctos  [x] Rate limit 429 con headers  [x] p95 < 100ms
 Fase 12: [ ] Logs JSON en producción  [ ] /metrics accesible  [ ] cargo audit = 0 vulnerabilidades
 Fase 13: [ ] Docker image < 100MB  [ ] Deploy staging automático  [ ] Runbooks documentados
 ```

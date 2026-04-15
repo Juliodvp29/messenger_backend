@@ -1,3 +1,7 @@
+use crate::handlers::auth::AuthState;
+use crate::middleware::logging::logging_middleware;
+use crate::middleware::security::security_headers_middleware;
+use crate::services::metrics::{MetricsExtension, SharedMetrics, metrics_handler};
 use axum::{
     Router, middleware,
     routing::{delete, get, patch, post},
@@ -58,6 +62,7 @@ pub fn create_router(
     config: &Config,
     db_pool: sqlx::PgPool,
     redis_manager: ConnectionManager,
+    metrics: SharedMetrics,
 ) -> Router {
     let user_repo = Arc::new(PostgresUserRepository::new(
         db_pool.clone(),
@@ -82,7 +87,7 @@ pub fn create_router(
         user_repo: user_repo.clone(),
     });
 
-    let auth_state = crate::handlers::auth::AuthState {
+    let auth_state = AuthState {
         user_repo: user_repo.clone(),
         otp_service: otp_service.clone(),
         jwt_service: jwt_service.clone(),
@@ -187,7 +192,6 @@ pub fn create_router(
             delete(remove_reaction),
         )
         .route("/chats/:id/settings", patch(update_chat_settings))
-        // ---- Phase 9: Group / Channel management ----
         .route(
             "/chats/:id/participants",
             get(list_participants).post(add_participant),
@@ -290,6 +294,7 @@ pub fn create_router(
 
     let public_routes = Router::new()
         .route("/health", get(health))
+        .route("/metrics", get(metrics_handler))
         .route("/auth/register", post(register))
         .route("/auth/verify-phone", post(verify_phone))
         .route("/auth/login", post(login))
@@ -310,7 +315,10 @@ pub fn create_router(
         .merge(protected_user_routes)
         .merge(protected_contact_routes)
         .merge(protected_block_routes)
-        .with_state(auth_state)
+        .layer(middleware::from_fn(security_headers_middleware))
+        .layer(middleware::from_fn(logging_middleware))
+        .layer(axum::extract::Extension(MetricsExtension(metrics)))
+        .with_state(auth_state.clone())
 }
 
 async fn health() -> &'static str {

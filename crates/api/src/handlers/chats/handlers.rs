@@ -27,6 +27,7 @@ use crate::handlers::chats::dto::{
     UpdateChatRequest, UpdateChatResponse, UpdateChatSettingsRequest,
 };
 use crate::middleware::auth::AuthenticatedUser;
+use crate::services::metrics::MetricsExtension;
 use crate::services::push::{PRESENCE_KEY_PREFIX, PushNotificationJob, enqueue_push_notification};
 use infrastructure::repositories::chat::PostgresChatRepository;
 
@@ -118,10 +119,13 @@ pub async fn list_chats(
 
 pub async fn send_message(
     State(state): State<ChatsState>,
+    Extension(metrics): Extension<MetricsExtension>,
     Extension(auth): Extension<AuthenticatedUser>,
     Path(chat_id): Path<Uuid>,
     Json(req): Json<SendMessageRequest>,
 ) -> Result<Response, ApiError> {
+    // Record metric
+    metrics.0.read().messages_sent_total.inc();
     let message = state
         .chat_repo
         .send_message(
