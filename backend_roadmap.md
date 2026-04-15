@@ -1566,7 +1566,6 @@ meta: >
   Las notificaciones in-app se muestran cuando están en la app.
   Las preferencias de silenciado se respetan.
 
-gitflow_rama: "feature/FASE-08-notificaciones"
 dependencias: ["FASE-06"]
 
 endpoints:
@@ -1656,7 +1655,6 @@ meta: >
   eliminarse. La clave de grupo se rota al cambiar la membresía.
   Los canales solo permiten broadcast de admins.
 
-gitflow_rama: "feature/FASE-09-grupos"
 dependencias: ["FASE-05"]
 
 endpoints:
@@ -2378,18 +2376,18 @@ decisiones:
 
 ---
 
-## APÉNDICE — Checklist de completitud por fase
+## APÉNDICE — Checklist de c  ompletitud por fase
 
 ```
-Fase 01: [ ] cargo build limpio  [ ] CI verde  [ ] Docker Compose up  [ ] make lint pasa
-Fase 02: [ ] sqlx migrate info = all Applied  [ ] GET /health = 200  [ ] Tests integración pasan
-Fase 03: [ ] Registro + verificación OTP  [ ] Login + JWT  [ ] 2FA TOTP  [ ] Revocación sesiones
-Fase 04: [ ] Upload 100 OPKs  [ ] GET /keys/:id consume OPK atómicamente  [ ] Fingerprint idempotente
-Fase 05: [ ] CRUD chats  [ ] Paginación cursor estable  [ ] Adjunto S3 confirmado  [ ] Reacciones
-Fase 06: [ ] WS multi-device  [ ] Redis Pub/Sub entre instancias  [ ] Presencia en Redis  [ ] Gap sync
-Fase 07: [ ] Privacy "only_me" no visible para otros  [ ] Vistas en tiempo real  [ ] Expiración 24h
-Fase 08: [ ] Push a usuario offline  [ ] Token inválido = DELETE sesión  [ ] Silenciado respetado
-Fase 09: [ ] Roles jerárquicos  [ ] Rotación group_key al eliminar miembro  [ ] Invite link revocable
+Fase 01: [x] cargo build limpio  [x] CI verde  [x] Docker Compose up  [x] make lint pasa
+Fase 02: [x] sqlx migrate info = all Applied  [x] GET /health = 200  [x] Tests integración pasan
+Fase 03: [x] Registro + verificación OTP  [x] Login + JWT  [x] 2FA TOTP  [x] Revocación sesiones
+Fase 04: [x] Upload 100 OPKs  [x] GET /keys/:id consume OPK atómicamente  [x] Fingerprint idempotente
+Fase 05: [x] CRUD chats  [x] Paginación cursor estable  [x] Adjunto S3 confirmado  [x] Reacciones
+Fase 06: [x] WS multi-device  [x] Redis Pub/Sub entre instancias  [x] Presencia en Redis  [x] Gap sync
+Fase 07: [x] Privacy "only_me" no visible para otros  [x] Vistas en tiempo real  [x] Expiración 24h
+Fase 08: [x] Push a usuario offline  [x] Token inválido = DELETE sesión  [x] Silenciado respetado
+Fase 09: [x] Roles jerárquicos  [x] Rotación group_key al eliminar miembro  [x] Invite link revocable
 Fase 10: [ ] Búsqueda respeta privacidad  [ ] Sync agenda no revela no-registrados
 Fase 11: [ ] 7 roles Redis correctos  [ ] Rate limit 429 con headers  [ ] p95 < 100ms
 Fase 12: [ ] Logs JSON en producción  [ ] /metrics accesible  [ ] cargo audit = 0 vulnerabilidades

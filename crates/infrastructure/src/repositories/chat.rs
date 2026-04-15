@@ -1,6 +1,8 @@
 use chrono::{DateTime, Utc};
 use domain::chat::entity::PendingAttachment;
-use domain::chat::entity::{Chat, ChatMessage, ChatPreview, ChatType};
+use domain::chat::entity::{
+    Chat, ChatMessage, ChatPreview, ChatType, ParticipantDetail, ParticipantRole,
+};
 use domain::chat::notifications::{
     ChatSettings, NewNotification, Notification, NotificationCursor, NotificationType,
     UpdateChatSettings,
@@ -9,6 +11,8 @@ use domain::chat::repository::{
     ChatCursor, ChatRepository, ConfirmAttachmentInput, MessageCursor, MessageDirection,
     MessageReaction, NewMessage, NewPendingAttachment,
 };
+use rand::Rng;
+use rand::distributions::Alphanumeric;
 use shared::error::{DomainError, DomainResult};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -203,12 +207,13 @@ impl ChatRepository for PostgresChatRepository {
                 String,
                 Option<String>,
                 Option<String>,
+                Option<String>,
                 Option<Uuid>,
                 DateTime<Utc>,
             ),
         >(
             r#"
-            SELECT c.id, c.type::text, c.name, c.avatar_url, c.created_by, c.created_at
+            SELECT c.id, c.type::text, c.name, c.description, c.avatar_url, c.created_by, c.created_at
             FROM chats c
             JOIN chat_participants cp ON cp.chat_id = c.id
             WHERE c.id = $1
@@ -224,7 +229,7 @@ impl ChatRepository for PostgresChatRepository {
         .map_err(|e| DomainError::Internal(e.to_string()))?;
 
         row.map(
-            |(id, chat_type, name, avatar_url, created_by, created_at)| {
+            |(id, chat_type, name, description, avatar_url, created_by, created_at)| {
                 let parsed_type = ChatType::from_db_str(&chat_type).ok_or_else(|| {
                     DomainError::Internal(format!("invalid chat type: {chat_type}"))
                 })?;
@@ -232,6 +237,7 @@ impl ChatRepository for PostgresChatRepository {
                     id,
                     chat_type: parsed_type,
                     name,
+                    description,
                     avatar_url,
                     created_by,
                     created_at,
@@ -831,12 +837,21 @@ impl ChatRepository for PostgresChatRepository {
         user_id: Uuid,
         chat_id: Uuid,
         name: Option<String>,
+        description: Option<String>,
         avatar_url: Option<String>,
     ) -> DomainResult<Chat> {
-        let (chat_type, current_name, current_avatar, created_by) =
-            sqlx::query_as::<_, (String, Option<String>, Option<String>, Option<Uuid>)>(
-                r#"
-            SELECT c.type::text, c.name, c.avatar_url, c.created_by
+        let (chat_type, current_name, current_desc, current_avatar, created_by) = sqlx::query_as::<
+            _,
+            (
+                String,
+                Option<String>,
+                Option<String>,
+                Option<String>,
+                Option<Uuid>,
+            ),
+        >(
+            r#"
+            SELECT c.type::text, c.name, c.description, c.avatar_url, c.created_by
             FROM chats c
             JOIN chat_participants cp ON cp.chat_id = c.id
             WHERE c.id = $1
@@ -844,26 +859,28 @@ impl ChatRepository for PostgresChatRepository {
               AND cp.left_at IS NULL
               AND c.deleted_at IS NULL
             "#,
-            )
-            .bind(chat_id)
-            .bind(user_id)
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| DomainError::Internal(e.to_string()))?;
+        )
+        .bind(chat_id)
+        .bind(user_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
 
-        let new_name = name.or(current_name.clone());
-        let new_avatar = avatar_url.or(current_avatar.clone());
+        let new_name = name.or(current_name);
+        let new_desc = description.or(current_desc);
+        let new_avatar = avatar_url.or(current_avatar);
 
         let (id, updated_at) = sqlx::query_as::<_, (Uuid, DateTime<Utc>)>(
             r#"
             UPDATE chats
-            SET name = $3, avatar_url = $4, updated_at = NOW()
+            SET name = $2, description = $3, avatar_url = $4, updated_at = NOW()
             WHERE id = $1
             RETURNING id, updated_at
             "#,
         )
         .bind(chat_id)
         .bind(new_name.clone())
+        .bind(new_desc.clone())
         .bind(new_avatar.clone())
         .fetch_one(&self.pool)
         .await
@@ -876,6 +893,7 @@ impl ChatRepository for PostgresChatRepository {
             id,
             chat_type: parsed_type,
             name: new_name,
+            description: new_desc,
             avatar_url: new_avatar,
             created_by,
             created_at: updated_at,
@@ -1301,6 +1319,521 @@ impl ChatRepository for PostgresChatRepository {
         self.get_chat_settings(user_id, chat_id)
             .await?
             .ok_or_else(|| DomainError::NotFound("chat settings not found".to_string()))
+    }
+
+    // -------------------------------------------------------------------------
+    // Phase 9 — Group / Channel management
+    // -------------------------------------------------------------------------
+
+    async fn get_participant_role(
+        &self,
+        user_id: Uuid,
+        chat_id: Uuid,
+    ) -> DomainResult<Option<ParticipantRole>> {
+        let row = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT role::text
+            FROM chat_participants
+            WHERE chat_id = $1 AND user_id = $2 AND left_at IS NULL
+            "#,
+        )
+        .bind(chat_id)
+        .bind(user_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        Ok(row.and_then(|s| ParticipantRole::from_db_str(&s)))
+    }
+
+    async fn get_participants_detail(
+        &self,
+        actor_id: Uuid,
+        chat_id: Uuid,
+    ) -> DomainResult<Vec<ParticipantDetail>> {
+        // Verify actor is a member first
+        self.verify_participant(actor_id, chat_id).await?;
+
+        let rows = sqlx::query_as::<
+            _,
+            (
+                Uuid,
+                Uuid,
+                String,
+                Option<String>,
+                Option<Uuid>,
+                DateTime<Utc>,
+            ),
+        >(
+            r#"
+            SELECT user_id, chat_id, role::text, encryption_key_enc, added_by, joined_at
+            FROM chat_participants
+            WHERE chat_id = $1 AND left_at IS NULL
+            ORDER BY joined_at ASC
+            "#,
+        )
+        .bind(chat_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        rows.into_iter()
+            .map(
+                |(user_id, chat_id, role_str, encryption_key_enc, added_by, joined_at)| {
+                    let role = ParticipantRole::from_db_str(&role_str).ok_or_else(|| {
+                        DomainError::Internal(format!("invalid participant role: {role_str}"))
+                    })?;
+                    Ok(ParticipantDetail {
+                        user_id,
+                        chat_id,
+                        role,
+                        encryption_key_enc,
+                        added_by,
+                        joined_at,
+                    })
+                },
+            )
+            .collect()
+    }
+
+    async fn add_participant(
+        &self,
+        chat_id: Uuid,
+        actor_id: Uuid,
+        user_id: Uuid,
+        encryption_key_enc: Option<String>,
+    ) -> DomainResult<ParticipantDetail> {
+        // Actor must be admin or owner
+        let actor_role = self
+            .get_participant_role(actor_id, chat_id)
+            .await?
+            .ok_or_else(|| DomainError::Unauthorized("not a member of this chat".to_string()))?;
+
+        if actor_role < ParticipantRole::Admin {
+            return Err(DomainError::Unauthorized(
+                "only admins and owners can add participants".to_string(),
+            ));
+        }
+
+        // Check the chat is a group or channel (not private)
+        let chat_type = sqlx::query_scalar::<_, String>(
+            "SELECT type::text FROM chats WHERE id = $1 AND deleted_at IS NULL",
+        )
+        .bind(chat_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?
+        .ok_or_else(|| DomainError::NotFound("chat not found".to_string()))?;
+
+        if chat_type == "private" {
+            return Err(DomainError::Validation(
+                "cannot add participants to a private chat".to_string(),
+            ));
+        }
+
+        // Check not already a member
+        let already_member = sqlx::query_scalar::<_, i64>(
+            "SELECT 1 FROM chat_participants WHERE chat_id = $1 AND user_id = $2 AND left_at IS NULL",
+        )
+        .bind(chat_id)
+        .bind(user_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        if already_member.is_some() {
+            return Err(DomainError::Validation(
+                "user is already a member".to_string(),
+            ));
+        }
+
+        let row = sqlx::query_as::<_, (Uuid, Uuid, String, Option<String>, Option<Uuid>, DateTime<Utc>)>(
+            r#"
+            INSERT INTO chat_participants (chat_id, user_id, role, encryption_key_enc, added_by, joined_at)
+            VALUES ($1, $2, 'member'::participant_role, $3, $4, NOW())
+            ON CONFLICT (chat_id, user_id) DO UPDATE
+                SET left_at = NULL, role = 'member'::participant_role,
+                    encryption_key_enc = EXCLUDED.encryption_key_enc,
+                    added_by = EXCLUDED.added_by,
+                    joined_at = NOW()
+            RETURNING user_id, chat_id, role::text, encryption_key_enc, added_by, joined_at
+            "#,
+        )
+        .bind(chat_id)
+        .bind(user_id)
+        .bind(encryption_key_enc)
+        .bind(actor_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        let role = ParticipantRole::from_db_str(&row.2)
+            .ok_or_else(|| DomainError::Internal("invalid role".to_string()))?;
+        Ok(ParticipantDetail {
+            user_id: row.0,
+            chat_id: row.1,
+            role,
+            encryption_key_enc: row.3,
+            added_by: row.4,
+            joined_at: row.5,
+        })
+    }
+
+    async fn remove_participant(
+        &self,
+        chat_id: Uuid,
+        actor_id: Uuid,
+        target_id: Uuid,
+    ) -> DomainResult<bool> {
+        let actor_role = self
+            .get_participant_role(actor_id, chat_id)
+            .await?
+            .ok_or_else(|| DomainError::Unauthorized("not a member of this chat".to_string()))?;
+
+        let target_role = self
+            .get_participant_role(target_id, chat_id)
+            .await?
+            .ok_or_else(|| DomainError::NotFound("target user is not a member".to_string()))?;
+
+        // Self-leave: anyone can leave, but owners must transfer first
+        if actor_id == target_id {
+            if actor_role == ParticipantRole::Owner {
+                return Err(DomainError::Validation(
+                    "owner must transfer ownership before leaving".to_string(),
+                ));
+            }
+        } else {
+            // Kicking: actor must outrank target
+            if actor_role <= target_role {
+                return Err(DomainError::Unauthorized(
+                    "insufficient role to remove this participant".to_string(),
+                ));
+            }
+        }
+
+        sqlx::query(
+            "UPDATE chat_participants SET left_at = NOW() WHERE chat_id = $1 AND user_id = $2 AND left_at IS NULL",
+        )
+        .bind(chat_id)
+        .bind(target_id)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        // Key rotation is always required when a member leaves
+        Ok(true)
+    }
+
+    async fn update_participant_role(
+        &self,
+        chat_id: Uuid,
+        actor_id: Uuid,
+        target_id: Uuid,
+        new_role: ParticipantRole,
+    ) -> DomainResult<ParticipantDetail> {
+        let actor_role = self
+            .get_participant_role(actor_id, chat_id)
+            .await?
+            .ok_or_else(|| DomainError::Unauthorized("not a member of this chat".to_string()))?;
+
+        let target_role = self
+            .get_participant_role(target_id, chat_id)
+            .await?
+            .ok_or_else(|| DomainError::NotFound("target user is not a member".to_string()))?;
+
+        // Actor must outrank both the target's current role and the new role
+        if actor_role <= target_role || actor_role <= new_role {
+            return Err(DomainError::Unauthorized(
+                "insufficient role to change this participant's role".to_string(),
+            ));
+        }
+
+        let row = sqlx::query_as::<
+            _,
+            (
+                Uuid,
+                Uuid,
+                String,
+                Option<String>,
+                Option<Uuid>,
+                DateTime<Utc>,
+            ),
+        >(
+            r#"
+            UPDATE chat_participants
+            SET role = $3::participant_role
+            WHERE chat_id = $1 AND user_id = $2 AND left_at IS NULL
+            RETURNING user_id, chat_id, role::text, encryption_key_enc, added_by, joined_at
+            "#,
+        )
+        .bind(chat_id)
+        .bind(target_id)
+        .bind(new_role.as_db_str())
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        let role = ParticipantRole::from_db_str(&row.2)
+            .ok_or_else(|| DomainError::Internal("invalid role returned".to_string()))?;
+        Ok(ParticipantDetail {
+            user_id: row.0,
+            chat_id: row.1,
+            role,
+            encryption_key_enc: row.3,
+            added_by: row.4,
+            joined_at: row.5,
+        })
+    }
+
+    async fn set_invite_link(
+        &self,
+        chat_id: Uuid,
+        actor_id: Uuid,
+        slug: Option<String>,
+    ) -> DomainResult<Option<String>> {
+        let actor_role = self
+            .get_participant_role(actor_id, chat_id)
+            .await?
+            .ok_or_else(|| DomainError::Unauthorized("not a member of this chat".to_string()))?;
+
+        if actor_role < ParticipantRole::Admin {
+            return Err(DomainError::Unauthorized(
+                "only admins and owners can manage invite links".to_string(),
+            ));
+        }
+
+        let new_slug = match slug.as_deref() {
+            Some("") | None => {
+                // Generate a random 12-character slug
+                let s: String = rand::thread_rng()
+                    .sample_iter(&Alphanumeric)
+                    .take(12)
+                    .map(char::from)
+                    .collect();
+                Some(s.to_lowercase())
+            }
+            Some(s) => Some(s.to_string()),
+        };
+
+        sqlx::query("UPDATE chats SET invite_link = $2, updated_at = NOW() WHERE id = $1")
+            .bind(chat_id)
+            .bind(&new_slug)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        Ok(new_slug)
+    }
+
+    async fn find_chat_by_slug(&self, slug: &str) -> DomainResult<Option<Chat>> {
+        let row = sqlx::query_as::<
+            _,
+            (
+                Uuid,
+                String,
+                Option<String>,
+                Option<String>,
+                Option<String>,
+                Option<Uuid>,
+                DateTime<Utc>,
+            ),
+        >(
+            r#"
+            SELECT id, type::text, name, description, avatar_url, created_by, created_at
+            FROM chats
+            WHERE invite_link = $1 AND deleted_at IS NULL
+            "#,
+        )
+        .bind(slug)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        row.map(
+            |(id, chat_type, name, description, avatar_url, created_by, created_at)| {
+                let parsed_type = ChatType::from_db_str(&chat_type).ok_or_else(|| {
+                    DomainError::Internal(format!("invalid chat type: {chat_type}"))
+                })?;
+                Ok(Chat {
+                    id,
+                    chat_type: parsed_type,
+                    name,
+                    description,
+                    avatar_url,
+                    created_by,
+                    created_at,
+                })
+            },
+        )
+        .transpose()
+    }
+
+    async fn join_by_invite(
+        &self,
+        chat_id: Uuid,
+        user_id: Uuid,
+    ) -> DomainResult<ParticipantDetail> {
+        // Check not already a member
+        let already_member = sqlx::query_scalar::<_, i64>(
+            "SELECT 1 FROM chat_participants WHERE chat_id = $1 AND user_id = $2 AND left_at IS NULL",
+        )
+        .bind(chat_id)
+        .bind(user_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        if already_member.is_some() {
+            return Err(DomainError::Validation(
+                "already a member of this chat".to_string(),
+            ));
+        }
+
+        let row = sqlx::query_as::<
+            _,
+            (
+                Uuid,
+                Uuid,
+                String,
+                Option<String>,
+                Option<Uuid>,
+                DateTime<Utc>,
+            ),
+        >(
+            r#"
+            INSERT INTO chat_participants (chat_id, user_id, role, joined_at)
+            VALUES ($1, $2, 'member'::participant_role, NOW())
+            ON CONFLICT (chat_id, user_id) DO UPDATE
+                SET left_at = NULL, role = 'member'::participant_role, joined_at = NOW()
+            RETURNING user_id, chat_id, role::text, encryption_key_enc, added_by, joined_at
+            "#,
+        )
+        .bind(chat_id)
+        .bind(user_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        let role = ParticipantRole::from_db_str(&row.2)
+            .ok_or_else(|| DomainError::Internal("invalid role".to_string()))?;
+        Ok(ParticipantDetail {
+            user_id: row.0,
+            chat_id: row.1,
+            role,
+            encryption_key_enc: row.3,
+            added_by: row.4,
+            joined_at: row.5,
+        })
+    }
+
+    async fn rotate_group_key(
+        &self,
+        chat_id: Uuid,
+        actor_id: Uuid,
+        keys: Vec<(Uuid, String)>,
+    ) -> DomainResult<usize> {
+        let actor_role = self
+            .get_participant_role(actor_id, chat_id)
+            .await?
+            .ok_or_else(|| DomainError::Unauthorized("not a member of this chat".to_string()))?;
+
+        if actor_role < ParticipantRole::Admin {
+            return Err(DomainError::Unauthorized(
+                "only admins and owners can rotate the group key".to_string(),
+            ));
+        }
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        let mut updated = 0usize;
+        for (member_id, new_key) in &keys {
+            let result = sqlx::query(
+                r#"
+                UPDATE chat_participants
+                SET encryption_key_enc = $3
+                WHERE chat_id = $1 AND user_id = $2 AND left_at IS NULL
+                "#,
+            )
+            .bind(chat_id)
+            .bind(member_id)
+            .bind(new_key)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+            updated += result.rows_affected() as usize;
+        }
+
+        tx.commit()
+            .await
+            .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        Ok(updated)
+    }
+
+    async fn transfer_ownership(
+        &self,
+        chat_id: Uuid,
+        current_owner_id: Uuid,
+        new_owner_id: Uuid,
+    ) -> DomainResult<()> {
+        // Verify current owner
+        let owner_role = self
+            .get_participant_role(current_owner_id, chat_id)
+            .await?
+            .ok_or_else(|| DomainError::Unauthorized("not a member of this chat".to_string()))?;
+
+        if owner_role != ParticipantRole::Owner {
+            return Err(DomainError::Unauthorized(
+                "only the owner can transfer ownership".to_string(),
+            ));
+        }
+
+        // Verify new owner is an active member
+        let new_role = self
+            .get_participant_role(new_owner_id, chat_id)
+            .await?
+            .ok_or_else(|| {
+                DomainError::NotFound("new owner is not a member of this chat".to_string())
+            })?;
+
+        let _ = new_role; // any role is fine — we'll promote them
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        // Demote current owner to admin
+        sqlx::query(
+            "UPDATE chat_participants SET role = 'admin'::participant_role WHERE chat_id = $1 AND user_id = $2",
+        )
+        .bind(chat_id)
+        .bind(current_owner_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        // Promote new owner
+        sqlx::query(
+            "UPDATE chat_participants SET role = 'owner'::participant_role WHERE chat_id = $1 AND user_id = $2",
+        )
+        .bind(chat_id)
+        .bind(new_owner_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        tx.commit()
+            .await
+            .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        Ok(())
     }
 }
 
