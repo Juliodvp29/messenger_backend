@@ -7,6 +7,7 @@ pub struct User {
     pub id: UserId,
     pub username: Option<Username>,
     pub phone: PhoneNumber,
+    pub phone_hash: String,
     pub email: Option<Email>,
     pub status_text: String,
     pub two_fa_enabled: bool,
@@ -18,13 +19,17 @@ pub struct User {
     pub deleted_at: Option<DateTime<Utc>>,
 }
 
+use shared::hash::hash_phone;
+
 impl User {
     pub fn new(username: Option<Username>, phone: PhoneNumber, email: Option<Email>) -> Self {
         let now = Utc::now();
+        let phone_hash = hash_phone(phone.as_str());
         Self {
             id: UserId::new(),
             username,
             phone,
+            phone_hash,
             email,
             status_text: String::new(),
             two_fa_enabled: false,

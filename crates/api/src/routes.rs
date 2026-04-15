@@ -8,11 +8,15 @@ use crate::handlers::auth::{
     delete_session, list_sessions, login, login_verify, logout, recover, recover_verify, refresh,
     register, two_fa_setup, two_fa_setup_verify, two_fa_verify, verify_phone,
 };
+use crate::handlers::blocks::handlers::{BlocksState, block_user, list_blocked, unblock_user};
 use crate::handlers::chats::{
     ChatsState, add_reaction, create_chat, delete_chat, delete_message, delete_read_notifications,
     edit_message, get_chat, list_chats, list_messages, list_notifications,
     mark_all_notifications_read, mark_messages_read, mark_notification_read, remove_reaction,
     send_message, update_chat, update_chat_settings,
+};
+use crate::handlers::contacts::handlers::{
+    ContactsState, create_contact, delete_contact, list_contacts, sync_contacts, update_contact,
 };
 use crate::handlers::groups::{
     add_participant, create_invite_link, delete_invite_link, join_by_slug, list_participants,
@@ -26,12 +30,16 @@ use crate::handlers::stories::{
     StoriesState, create_story, delete_story, get_story_views, list_my_stories, list_stories,
     react_to_story, view_story,
 };
+use crate::handlers::users::handlers::{
+    UsersState, get_my_profile, get_user_profile, search_users,
+};
 use crate::handlers::ws::{WsState, ws_handler};
 use crate::middleware::auth::{AuthMiddlewareState, auth_middleware};
 use crate::services::jwt::JwtService;
 use crate::services::otp::OtpService;
 use crate::services::storage::S3StorageService;
 use infrastructure::repositories::chat::PostgresChatRepository;
+use infrastructure::repositories::contact::PostgresContactRepository;
 use infrastructure::repositories::keys::PostgresKeyRepository;
 use infrastructure::repositories::stories::PostgresStoryRepository;
 use infrastructure::repositories::user::PostgresUserRepository;
@@ -50,7 +58,10 @@ pub fn create_router(
     db_pool: sqlx::PgPool,
     redis_manager: ConnectionManager,
 ) -> Router {
-    let user_repo = Arc::new(PostgresUserRepository::new(db_pool.clone()));
+    let user_repo = Arc::new(PostgresUserRepository::new(
+        db_pool.clone(),
+        Some(redis_manager.clone()),
+    ));
     let chat_repo = Arc::new(PostgresChatRepository::new(db_pool.clone()));
     let key_repo = Arc::new(PostgresKeyRepository::new(db_pool.clone()));
 
@@ -72,7 +83,7 @@ pub fn create_router(
 
     let auth_state = crate::handlers::auth::AuthState {
         user_repo: user_repo.clone(),
-        otp_service,
+        otp_service: otp_service.clone(),
         jwt_service: jwt_service.clone(),
     };
 
@@ -95,6 +106,24 @@ pub fn create_router(
         story_repo: story_repo.clone(),
         chat_repo: chat_repo.clone(),
         redis: redis_manager.clone(),
+    };
+
+    let contact_repo = Arc::new(PostgresContactRepository::new(
+        db_pool.clone(),
+        Some(redis_manager.clone()),
+    ));
+    let contacts_state = ContactsState {
+        contact_repo: contact_repo.clone(),
+        user_repo: user_repo.clone(),
+    };
+
+    let blocks_state = BlocksState {
+        user_repo: user_repo.clone(),
+    };
+
+    let users_state = UsersState {
+        user_repo: user_repo.clone(),
+        otp_service: otp_service.clone(),
     };
 
     let ws_state = Arc::new(WsState {
@@ -219,6 +248,38 @@ pub fn create_router(
         ))
         .with_state(stories_state);
 
+    let protected_user_routes = Router::new()
+        .route("/users/search", get(search_users))
+        .route("/users/me/profile", get(get_my_profile))
+        .route("/users/:user_id/profile", get(get_user_profile))
+        .route_layer(middleware::from_fn_with_state(
+            auth_middleware_state.clone(),
+            auth_middleware,
+        ))
+        .with_state(users_state);
+
+    let protected_contact_routes = Router::new()
+        .route("/contacts", get(list_contacts).post(create_contact))
+        .route(
+            "/contacts/:contact_id",
+            patch(update_contact).delete(delete_contact),
+        )
+        .route("/contacts/sync", post(sync_contacts))
+        .route_layer(middleware::from_fn_with_state(
+            auth_middleware_state.clone(),
+            auth_middleware,
+        ))
+        .with_state(contacts_state);
+
+    let protected_block_routes = Router::new()
+        .route("/blocks", get(list_blocked))
+        .route("/blocks/:user_id", post(block_user).delete(unblock_user))
+        .route_layer(middleware::from_fn_with_state(
+            auth_middleware_state.clone(),
+            auth_middleware,
+        ))
+        .with_state(blocks_state);
+
     let ws_routes = Router::new()
         .route("/ws", get(ws_handler))
         .with_state(ws_router_state);
@@ -242,6 +303,9 @@ pub fn create_router(
         .merge(protected_notification_routes)
         .merge(protected_attachment_routes)
         .merge(protected_story_routes)
+        .merge(protected_user_routes)
+        .merge(protected_contact_routes)
+        .merge(protected_block_routes)
         .with_state(auth_state)
 }
 

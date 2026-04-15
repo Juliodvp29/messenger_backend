@@ -1,16 +1,16 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, owner_id, contact_id, phone, nickname, is_favorite, created_at\n            FROM contacts\n            WHERE owner_id = $1 AND is_favorite = TRUE\n            ORDER BY nickname ASC, phone ASC\n            ",
+  "query": "\n            SELECT \n                id AS \"id!\", \n                owner_id AS \"owner_id!\", \n                contact_id, \n                phone AS \"phone!\", \n                nickname, \n                is_favorite AS \"is_favorite!\", \n                created_at AS \"created_at!\"\n            FROM contacts\n            WHERE id = $1\n            ",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "id",
+        "name": "id!",
         "type_info": "Uuid"
       },
       {
         "ordinal": 1,
-        "name": "owner_id",
+        "name": "owner_id!",
         "type_info": "Uuid"
       },
       {
@@ -20,7 +20,7 @@
       },
       {
         "ordinal": 3,
-        "name": "phone",
+        "name": "phone!",
         "type_info": "Text"
       },
       {
@@ -30,12 +30,12 @@
       },
       {
         "ordinal": 5,
-        "name": "is_favorite",
+        "name": "is_favorite!",
         "type_info": "Bool"
       },
       {
         "ordinal": 6,
-        "name": "created_at",
+        "name": "created_at!",
         "type_info": "Timestamptz"
       }
     ],
@@ -54,5 +54,5 @@
       false
     ]
   },
-  "hash": "097c69f630cffd5b2e234c1c6813a9894702d68c1d038c06b8cb73c6d65a1851"
+  "hash": "15c37c2352692bd708b918218135f9e926abe1549dfa4784f03ffebe1641d444"
 }
