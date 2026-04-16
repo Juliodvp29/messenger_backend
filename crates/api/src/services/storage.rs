@@ -87,7 +87,11 @@ impl S3StorageService {
     pub async fn apply_lifecycle_rules(&self) -> Result<(), ServiceError> {
         let story_rule = LifecycleRule::builder()
             .id("ExpireStoriesAfter24H")
-            .filter(LifecycleRuleFilter::builder().prefix("attachments/stories/").build())
+            .filter(
+                LifecycleRuleFilter::builder()
+                    .prefix("attachments/stories/")
+                    .build(),
+            )
             .status(ExpirationStatus::Enabled)
             .expiration(LifecycleExpiration::builder().days(1).build())
             .build()
