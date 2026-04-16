@@ -187,9 +187,8 @@ pub async fn view_story(
         .ok_or_else(|| ApiError(DomainError::NotFound("Story not found".to_string())))?;
 
     if story.user_id == auth.user_id {
-        return Err(ApiError(DomainError::Unauthorized(
-            "Cannot view your own story".to_string(),
-        )));
+        // If it's the author, return success but don't register a view or notify
+        return Ok(Json(()));
     }
 
     // Verify privacy permissions
@@ -262,9 +261,8 @@ pub async fn react_to_story(
         .ok_or_else(|| ApiError(DomainError::NotFound("Story not found".to_string())))?;
 
     if story.user_id == auth.user_id {
-        return Err(ApiError(DomainError::Unauthorized(
-            "Cannot react to your own story".to_string(),
-        )));
+        // Don't allow self-reactions, but return success silently
+        return Ok(Json(()));
     }
 
     // Verify privacy permissions
