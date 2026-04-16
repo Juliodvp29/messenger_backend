@@ -38,7 +38,10 @@ pub async fn auth_middleware(
     let token = &auth[7..];
     let claims = match state.jwt_service.validate_access_token(token) {
         Ok(claims) => claims,
-        Err(_) => return unauthorized_response("Invalid or expired token"),
+        Err(e) => {
+            tracing::error!("Auth middleware error: {:?}", e);
+            return unauthorized_response("Invalid or expired token");
+        }
     };
 
     let user_id = match Uuid::parse_str(&claims.sub) {

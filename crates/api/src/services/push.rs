@@ -116,10 +116,10 @@ pub async fn push_notification_worker(
         .unwrap_or_default();
 
     loop {
-        let pop_result: Result<(String, String), redis::RedisError> =
-            redis.brpop(PUSH_QUEUE_KEY, 0.0).await;
+        let pop_result: Result<Option<(String, String)>, redis::RedisError> =
+            redis.brpop(PUSH_QUEUE_KEY, 1.0).await;
         match pop_result {
-            Ok((_, payload_str)) => {
+            Ok(Some((_, payload_str))) => {
                 let job: PushNotificationJob = match serde_json::from_str(&payload_str) {
                     Ok(j) => j,
                     Err(e) => {
@@ -177,6 +177,7 @@ pub async fn push_notification_worker(
                     }
                 }
             }
+            Ok(None) => {} // Timeout, just loop
             Err(e) => {
                 error!("Redis BRPOP error: {}", e);
                 tokio::time::sleep(Duration::from_secs(1)).await;
