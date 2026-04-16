@@ -98,7 +98,13 @@ impl Config {
             .add_source(config::Environment::default().separator("__"))
             .build()?;
 
-        settings.try_deserialize()
+        let mut config: Self = settings.try_deserialize()?;
+
+        // Fix newlines in JWT keys if they come from .env with literal \n
+        config.jwt.private_key = config.jwt.private_key.replace("\\n", "\n");
+        config.jwt.public_key = config.jwt.public_key.replace("\\n", "\n");
+
+        Ok(config)
     }
 }
 

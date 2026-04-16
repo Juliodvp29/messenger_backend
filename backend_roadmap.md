@@ -2375,7 +2375,7 @@ decisiones:
 
 ---
 
-## APÉNDICE — Checklist de c  ompletitud por fase
+## APÉNDICE — Checklist de c ompletitud por fase
 
 ```
 Fase 01: [x] cargo build limpio  [x] CI verde  [x] Docker Compose up  [x] make lint pasa
@@ -2389,6 +2389,6 @@ Fase 08: [x] Push a usuario offline  [x] Token inválido = DELETE sesión  [x] S
 Fase 09: [x] Roles jerárquicos  [x] Rotación group_key al eliminar miembro  [x] Invite link revocable
 Fase 10: [x] Búsqueda respeta privacidad  [x] Sync agenda no revela no-registrados
 Fase 11: [x] 7 roles Redis correctos  [x] Rate limit 429 con headers  [x] p95 < 100ms
-Fase 12: [ ] Logs JSON en producción  [ ] /metrics accesible  [ ] cargo audit = 0 vulnerabilidades
+Fase 12: [x] Logs JSON en producción  [x] /metrics accesible  [x] cargo audit = 0 vulnerabilidades
 Fase 13: [ ] Docker image < 100MB  [ ] Deploy staging automático  [ ] Runbooks documentados
 ```
