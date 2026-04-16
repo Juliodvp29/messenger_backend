@@ -29,7 +29,9 @@ phase03_endpoints.json
 phase05_endpoints.json
 
 
-#Error
-
+# Error
 *.err
+
+# Scratch
+/scratch/
 

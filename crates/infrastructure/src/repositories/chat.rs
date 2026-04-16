@@ -708,7 +708,7 @@ impl ChatRepository for PostgresChatRepository {
     async fn verify_participant(&self, user_id: Uuid, chat_id: Uuid) -> DomainResult<()> {
         let exists = sqlx::query_scalar::<_, i64>(
             r#"
-            SELECT 1
+            SELECT 1::bigint
             FROM chat_participants cp
             JOIN chats c ON c.id = cp.chat_id
             WHERE cp.chat_id = $1
@@ -735,7 +735,7 @@ impl ChatRepository for PostgresChatRepository {
     async fn verify_message_in_chat(&self, message_id: Uuid, chat_id: Uuid) -> DomainResult<()> {
         let exists = sqlx::query_scalar::<_, i64>(
             r#"
-            SELECT 1
+            SELECT 1::bigint
             FROM messages m
             WHERE m.id = $1
               AND m.chat_id = $2
@@ -1433,7 +1433,7 @@ impl ChatRepository for PostgresChatRepository {
 
         // Check not already a member
         let already_member = sqlx::query_scalar::<_, i64>(
-            "SELECT 1 FROM chat_participants WHERE chat_id = $1 AND user_id = $2 AND left_at IS NULL",
+            "SELECT 1::bigint FROM chat_participants WHERE chat_id = $1 AND user_id = $2 AND left_at IS NULL",
         )
         .bind(chat_id)
         .bind(user_id)
@@ -1675,7 +1675,7 @@ impl ChatRepository for PostgresChatRepository {
     ) -> DomainResult<ParticipantDetail> {
         // Check not already a member
         let already_member = sqlx::query_scalar::<_, i64>(
-            "SELECT 1 FROM chat_participants WHERE chat_id = $1 AND user_id = $2 AND left_at IS NULL",
+            "SELECT 1::bigint FROM chat_participants WHERE chat_id = $1 AND user_id = $2 AND left_at IS NULL",
         )
         .bind(chat_id)
         .bind(user_id)
@@ -1870,7 +1870,7 @@ async fn ensure_active_membership_pool(
 ) -> DomainResult<()> {
     let exists = sqlx::query_scalar::<_, i64>(
         r#"
-        SELECT 1
+        SELECT 1::bigint
         FROM chat_participants cp
         JOIN chats c ON c.id = cp.chat_id
         WHERE cp.chat_id = $1
@@ -1901,7 +1901,7 @@ async fn ensure_not_blocked_in_private_chat(
 ) -> DomainResult<()> {
     let blocked = sqlx::query_scalar::<_, i64>(
         r#"
-        SELECT 1
+        SELECT 1::bigint
         FROM chat_participants cp
         JOIN user_blocks ub
           ON (ub.blocker_id = $1 AND ub.blocked_id = cp.user_id)
