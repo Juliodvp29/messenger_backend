@@ -115,8 +115,8 @@ mod tests {
     #[test]
     fn test_config_load() {
         let _ = dotenvy::dotenv();
-        // En CI o local con .env, esto debería cargar sin errores
-        // Si faltan variables requeridas, fallará
+        // In CI or locally with .env, this should load without errors.
+        // It will fail if any required variables are missing.
         let config = Config::load();
         assert!(config.is_ok(), "Config load failed: {:?}", config.err());
     }

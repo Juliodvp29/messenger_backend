@@ -30,12 +30,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .test_before_acquire(true)
         .connect(&config.database.url)
         .await
-        .expect("No se pudo conectar a PostgreSQL");
+        .expect("Could not connect to PostgreSQL");
 
     let redis_client = Client::open(config.redis.url.clone()).expect("Invalid Redis URL");
     let redis_manager = ConnectionManager::new(redis_client.clone())
         .await
-        .expect("No se pudo conectar a Redis");
+        .expect("Could not connect to Redis");
 
     let metrics = create_metrics().expect("Failed to create metrics");
 
@@ -87,8 +87,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = format!("{}:{}", config.server.host, config.server.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
 
-    println!("Servidor escuchando en {}", addr);
-    println!("Ambiente: {:?}", config.app_env);
+    println!("Server listening on {}", addr);
+    println!("Environment: {:?}", config.app_env);
 
     axum::serve(listener, app).await?;
 

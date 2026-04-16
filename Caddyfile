@@ -1,0 +1,51 @@
+# The domain is taken automatically from the $DOMAIN environment variable
+# configured in the .env.production file.
+{$DOMAIN:localhost} {
+    # -----------------------------------------------------------------
+    # Reverse Proxy for Rust API
+    # -----------------------------------------------------------------
+    # Redirect all general requests (HTTP & WebSockets) to the API.
+    # Caddy automatically handles WebSocket upgrades.
+    handle /* {
+        reverse_proxy api:3000
+    }
+
+    # -----------------------------------------------------------------
+    # Reverse Proxy for Object Storage (MinIO)
+    # -----------------------------------------------------------------
+    # All routes starting with /s3/ will be proxied to port 9000.
+    # handle_path removes the "/s3/" prefix before sending it to MinIO.
+    # Example: https://domain.com/s3/bucket/file -> http://minio:9000/bucket/file
+    handle_path /s3/* {
+        reverse_proxy minio:9000 {
+            header_up Host {host}
+            header_up X-Real-IP {remote}
+            header_up X-Forwarded-For {remote}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # -----------------------------------------------------------------
+    # Reverse Proxy for MinIO Admin Console
+    # -----------------------------------------------------------------
+    # Useful for manually managing files and buckets.
+    # WARNING: If this is a 100% public environment, consider commenting out
+    # this block or restricting it by IP.
+    handle_path /minio-admin/* {
+        reverse_proxy minio:9001 {
+            header_up Host {host}
+            header_up X-Real-IP {remote}
+            header_up X-Forwarded-For {remote}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+}
+
+# IMPORTANT:
+# If you are NOT going to use a domain and will use a public IP address instead,
+# Caddy will try to generate a TLS certificate and fail.
+#
+# For local deployments or flat HTTP IP-only setups, change the first line to:
+# :80 {
+#   ...
+# }
