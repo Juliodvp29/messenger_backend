@@ -1,592 +1,589 @@
-# Messenger Backend
+<p align="center">
+  <h1 align="center">🔐 Mesty API</h1>
+  <p align="center">
+    <strong>A production-ready, end-to-end encrypted messenger backend built in Rust.</strong>
+  </p>
+  <p align="center">
+    <a href="https://github.com/Juliodvp29/messenger_backend/actions/workflows/ci.yml"><img src="https://github.com/Juliodvp29/messenger_backend/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+    <img src="https://img.shields.io/badge/rust-nightly%20|%20edition%202026-orange?logo=rust" alt="Rust">
+    <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License">
+    <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome">
+  </p>
+</p>
 
-[![CI - Messenger Backend](https://github.com/Juliodvp29/messenger_backend/actions/workflows/ci.yml/badge.svg)](https://github.com/Juliodvp29/messenger_backend/actions/workflows/ci.yml)
+---
 
-Backend modular en Rust para una aplicación de mensajería estilo WhatsApp/Telegram con cifrado E2E.
+Mesty is a modular, high-performance backend for real-time messaging applications (WhatsApp/Telegram-style). It implements the **X3DH key agreement protocol** for end-to-end encryption, ensuring the server operates as a **zero-knowledge relay** — it never sees plaintext messages.
 
-## Fases de Desarrollo
+## Table of Contents
 
-| Fase | Descripción | Estado |
-|------|------------|--------|
-| 01 | Fundamentos y Configuración | ✅ Completado |
-| 02 | Base de Datos y Migraciones | ✅ Completado |
-| 03 | Autenticación y Seguridad | ✅ Completado |
-| 04 | Cifrado E2E | ✅ Completado |
-| 05 | Chats y Mensajes | ✅ Completado |
-| 06 | Tiempo Real (WebSockets) | ✅ Completado |
-| 07 | Stories y Reacciones | ✅ Completado |
-| 08 | Notificaciones | ✅ Completado |
-| 09 | Gestión de Grupos y Canales | ✅ Completado |
-| 10 | Búsqueda y Contactos | ✅ Completado |
-| 11 | Performance y Caché | ✅ Completado |
-| 12 | Observabilidad y Hardening | ✅ Completado |
-| 13 | Despliegue y Producción | ⏳ Pendiente |
+- [Features](#features)
+- [Architecture](#architecture)
+- [Tech Stack](#tech-stack)
+- [Quick Start](#quick-start)
+- [API Reference](#api-reference)
+- [Security Model](#security-model)
+- [Performance & Caching](#performance--caching)
+- [Deployment](#deployment)
+- [CI/CD](#cicd)
+- [Development](#development)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [License](#license)
 
-## Arquitectura
+## Features
 
-El proyecto utiliza un **Cargo Workspace** con la siguiente estructura:
-- `api/` — Handlers Axum, routing, middleware
-- `domain/` — Entidades puras de negocio y lógica core (sin dependencias de infraestructura)
-- `infrastructure/` — PostgreSQL, Redis, MinIO, email, SMS
-- `shared/` — Tipos comunes, configuración tipada, errores
+- 🔑 **End-to-End Encryption** — X3DH key exchange with per-message AES-GCM encryption
+- ⚡ **Real-Time Communication** — WebSocket with presence, typing indicators, and live sync
+- 📱 **Multi-Device Support** — Session management across multiple devices per user
+- 📸 **Ephemeral Stories** — 24-hour stories with granular privacy controls and auto-cleanup
+- 👥 **Groups & Channels** — Hierarchical roles (owner/admin/moderator/member), invite links, key rotation
+- 🔔 **Push Notifications** — FCM (Android/Web) and APNs (iOS) with privacy-safe payloads
+- 📇 **Privacy-Preserving Contact Sync** — SHA-256 hashed phone numbers, never sent in plaintext
+- 🚦 **Rate Limiting** — Sliding window with Lua-scripted atomic Redis operations
+- 📊 **Observability** — Prometheus metrics, structured JSON logging, request tracing
+- 🐳 **Production-Ready** — Multi-stage Docker build, Caddy auto-TLS, docker-compose orchestration
+
+## Architecture
+
+Mesty uses a **Cargo Workspace** with clean dependency boundaries enforced across four crates:
+
+```mermaid
+graph TB
+    API["🌐 api<br/><small>Axum handlers, routing,<br/>middleware, WebSocket</small>"]
+    DOMAIN["📦 domain<br/><small>Entities, repositories<br/>(trait definitions), business rules</small>"]
+    INFRA["🔧 infrastructure<br/><small>PostgreSQL, Redis, MinIO,<br/>SMTP implementations</small>"]
+    SHARED["🧰 shared<br/><small>Config, error types,<br/>cross-cutting utilities</small>"]
+
+    API --> DOMAIN
+    API --> INFRA
+    API --> SHARED
+    DOMAIN --> SHARED
+    INFRA --> DOMAIN
+    INFRA --> SHARED
+
+    style API fill:#4a9eff,stroke:#333,color:#fff
+    style DOMAIN fill:#ff6b6b,stroke:#333,color:#fff
+    style INFRA fill:#51cf66,stroke:#333,color:#fff
+    style SHARED fill:#ffd43b,stroke:#333,color:#000
+```
 
 ```
 crates/
-├── api/
-│   ├── src/
-│   │   ├── handlers/   # auth, chats, messages, stories, etc.
-│   │   ├── middleware/ # auth, rate_limit, logging
-│   │   ├── services/   # jwt, otp, push, storage, ws
-│   │   ├── routes.rs
-│   │   └── main.rs
-├── domain/
-│   ├── src/
-│   │   ├── chat/       # Entidades y repositorios de chat/mensajes
-│   │   ├── stories/    # Entidades y repositorios de historias
-│   │   ├── user/       # Usuario y gestión de perfiles
-│   │   ├── contact/    # Gestión de contactos
-│   │   └── keys/       # Modelos para cifrado E2E (X3DH)
-├── infrastructure/
-│   ├── src/
-│   │   ├── repositories/ # Implementaciones Postgres de repositorios
-│   │   ├── db/           # Pooled connection Postgres
-│   │   ├── redis/        # Cliente Redis y Pub/Sub
-│   │   ├── storage/      # MinIO/S3 Adapter
-│   │   └── email/        # SMTP con Lettre
-└── shared/
-    ├── src/
-    │   ├── config.rs   # Configuración tipada (env)
-    │   └── error.rs    # AppError centralizado
+├── api/                          # HTTP layer
+│   ├── handlers/                 # auth, chats, messages, stories, groups, keys, ws, ...
+│   ├── middleware/                # JWT auth, rate limiting, request logging, security headers
+│   ├── services/                 # jwt, otp, push notifications, S3 storage, websocket
+│   ├── routes.rs                 # Route tree definition
+│   └── main.rs                   # Application bootstrap
+├── domain/                       # Pure business logic (no infra dependencies)
+│   ├── chat/                     # Chat & message entities, repository traits
+│   ├── stories/                  # Story entities, privacy rules
+│   ├── user/                     # User entity, value objects (PhoneNumber, UserId)
+│   ├── contact/                  # Contact entity and sync logic
+│   └── keys/                     # E2E key models (X3DH protocol)
+├── infrastructure/               # External service adapters
+│   ├── repositories/             # PostgreSQL implementations of domain traits
+│   ├── db/                       # Connection pool management
+│   ├── redis/                    # Client, Pub/Sub, caching
+│   └── email/                    # SMTP via Lettre
+└── shared/                       # Cross-cutting concerns
+    ├── config.rs                 # Typed configuration from environment
+    ├── error.rs                  # Centralized AppError (thiserror)
+    └── logging.rs                # Structured tracing setup
 ```
 
-## Stack Tecnológico
+## Tech Stack
 
-- **Lenguaje**: Rust (edition 2024, stable 1.94+)
-- **Web Framework**: Axum 0.7
-- **Base de Datos**: PostgreSQL 17 + SQLx (queries typesafe)
-- **Cache y Mensajeria**: Redis 8
-- **Storage**: MinIO (compatible AWS S3)
-- **Email**: Lettre + SMTP
-- **SMS OTP**: Proveedor externo (Twilio/AWS SNS)
+| Layer               | Technology                   | Purpose                                           |
+| ------------------- | ---------------------------- | ------------------------------------------------- |
+| **Language**        | Rust (edition 2026, nightly) | Memory safety, performance, fearless concurrency  |
+| **Web Framework**   | Axum 0.7                     | Async HTTP, WebSocket, middleware via Tower       |
+| **Database**        | PostgreSQL 17 + SQLx 0.8     | Type-safe queries, compile-time checked SQL       |
+| **Cache & Pub/Sub** | Redis 8                      | Session cache, presence, rate limiting, event bus |
+| **Object Storage**  | MinIO (S3-compatible)        | Attachments, story media, pre-signed URLs         |
+| **Reverse Proxy**   | Caddy 2                      | Automatic HTTPS/TLS, routing, load balancing      |
+| **Email**           | Lettre + SMTP                | OTP delivery, notifications                       |
+| **Auth**            | Ed25519 JWT + TOTP           | Asymmetric token signing, two-factor auth         |
+| **Metrics**         | Prometheus                   | HTTP latency, connection pools, business metrics  |
+| **CI/CD**           | GitHub Actions               | Automated fmt, clippy, audit, tests               |
 
-## Endpoints — Fase 03 (Autenticación y Seguridad)
+## Quick Start
 
-Todos los endpoints requieren formato JSON (`Content-Type: application/json`).
+### Prerequisites
 
-| Método | Endpoint | Descripción | Auth |
-|--------|----------|-----------|------|
-| POST | `/auth/register` | Envía OTP de registro | No |
-| POST | `/auth/verify-phone` | Verifica OTP y crea usuario | No |
-| POST | `/auth/login` | Envía OTP de login | No |
-| POST | `/auth/login/verify` | Verifica OTP y retorna tokens | No |
-| POST | `/auth/refresh` | Renueva access token | No |
-| POST | `/auth/logout` | Cierra sesión actual | Bearer |
-| GET | `/auth/sessions` | Lista sesiones activas | Bearer |
-| DELETE | `/auth/sessions/:id` | Elimina sesión específica | Bearer |
-| POST | `/auth/recover` | Envía OTP de recuperación | No |
-| POST | `/auth/recover/verify` | Verifica recovery y retorna tokens | No |
-| POST | `/auth/2fa/setup` | Inicia setup 2FA | Bearer |
-| POST | `/auth/2fa/setup/verify` | Verifica código TOTP | Bearer |
-| POST | `/auth/2fa/verify` | Verifica TOTP después de login | No |
-| GET | `/health` | Health check | No |
+- [Docker](https://docs.docker.com/get-docker/) and Docker Compose
+- [Rust](https://rustup.rs/) (nightly toolchain)
+- [SQLx CLI](https://crates.io/crates/sqlx-cli) — `cargo install sqlx-cli --no-default-features --features postgres`
 
-## Endpoints — Fase 05 (Chats y Mensajes)
-
-Gestión de conversaciones y mensajería con contenido cifrado E2E.
-
-| Método | Endpoint | Descripción | Auth |
-|--------|----------|-----------|------|
-| POST | `/chats` | Crear chat privado o grupal | Bearer |
-| GET | `/chats` | Listar chats del usuario (paginado) | Bearer |
-| GET | `/chats/:id` | Obtener chat por ID | Bearer |
-| PATCH | `/chats/:id` | Actualizar chat (nombre, avatar) | Bearer |
-| DELETE | `/chats/:id` | Eliminar chat | Bearer |
-| POST | `/chats/:id/messages` | Enviar mensaje | Bearer |
-| GET | `/chats/:id/messages` | Listar mensajes (paginado) | Bearer |
-| PATCH | `/chats/:id/messages/:msg_id` | Editar mensaje | Bearer |
-| DELETE | `/chats/:id/messages/:msg_id` | Eliminar mensaje | Bearer |
-| POST | `/chats/:id/messages/read` | Marcar mensajes como leídos | Bearer |
-| POST | `/chats/:id/messages/:msg_id/reactions` | Añadir reacción | Bearer |
-| DELETE | `/chats/:id/messages/:msg_id/reactions/:emoji` | Eliminar reacción | Bearer |
-| POST | `/attachments/upload-url` | Generar URL prefirmada (upload_url) y URL permanente (file_url) | Bearer |
-| POST | `/attachments/confirm` | Confirmar attachment subido (para mensajes de chat) | Bearer |
-
-### Paginación de Mensajes
-
-Los endpoints de listar mensajes usan paginación por cursor:
+### Setup
 
 ```bash
-# Obtener mensajes (más recientes primero)
-curl "http://localhost:3000/chats/{chat_id}/messages?limit=50" \
-  -H "Authorization: Bearer $TOKEN"
+# 1. Clone the repository
+git clone https://github.com/Juliodvp29/messenger_backend.git
+cd messenger_backend
 
-# Obtener mensajes anteriores (before cursor)
-curl "http://localhost:3000/chats/{chat_id}/messages?cursor={cursor}&direction=before&limit=50" \
-  -H "Authorization: Bearer $TOKEN"
+# 2. Copy and configure environment variables
+cp .env.example .env
+
+# 3. Start infrastructure services
+make dev
+
+# 4. Run database migrations
+sqlx migrate run --database-url postgres://messenger:messenger_secret@localhost:5434/messenger_dev
+
+# 5. Start the API server
+cargo run -p api
 ```
 
-### Envío de Mensajes Cifrados
-
-Los mensajes se envían cifrados (el servidor nunca los desencripta):
+The API will be available at `http://localhost:3000`. Verify with:
 
 ```bash
-curl -X POST http://localhost:3000/chats/{chat_id}/messages \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "content_encrypted":"BASE64_AES_GCM_CIPHERTEXT",
-    "content_iv":"BASE64_12_BYTES",
-    "message_type":"text"
-  }'
+curl http://localhost:3000/health
 ```
 
-## Endpoints — Fase 06 (Tiempo Real)
+### Local Services
 
-WebSocket para eventos en tiempo real.
+| Service       | Port   | Description                   |
+| ------------- | ------ | ----------------------------- |
+| PostgreSQL    | `5434` | Primary database              |
+| Redis         | `6379` | Cache, Pub/Sub, rate limiting |
+| MinIO API     | `9000` | S3-compatible object storage  |
+| MinIO Console | `9001` | Web UI for file management    |
+| Mailhog SMTP  | `1025` | Development email server      |
+| Mailhog UI    | `8025` | View captured emails          |
 
-| Método | Endpoint | Descripción | Auth |
-|--------|----------|-----------|------|
-| GET | `/ws?token={jwt}` | Upgrade a WebSocket | Bearer (JWT) |
-
-### Eventos WebSocket
-
-El servidor envía eventos JSON por el socket:
-
-```json
-{ "type": "new_message", "payload": {...}, "timestamp": "..." }
-{ "type": "typing_start", "payload": {"chat_id": "...", "user_id": "..."}, "timestamp": "..." }
-{ "type": "typing_stop", "payload": {...}, "timestamp": "..." }
-{ "type": "messages_read", "payload": {...}, "timestamp": "..." }
-{ "type": "user_online", "payload": {"user_id": "..."}, "timestamp": "..." }
-{ "type": "user_offline", "payload": {"user_id": "..."}, "timestamp": "..." }
-```
-
-### Mensajes del Cliente
-
-El cliente envía por WebSocket:
-
-```json
-{ "type": "typing_start", "payload": {"chat_id": "..."} }
-{ "type": "typing_stop", "payload": {"chat_id": "..."} }
-{ "type": "sync_request", "payload": {"since": "2024-01-15T10:30:00Z"} }
-```
-
-### Redis Pub/Sub
-
-Canales usados para distribución entre instancias:
-
-- `user:{user_id}:events` — Eventos dirigidos a un usuario
-- `chat:{chat_id}:events` — Eventos de un chat específico
-- `presence:{user_id}` — Clave de presencia (TTL 65s)
-
-## Endpoints — Fase 07 (Stories y Reacciones)
-
-Stories efímeras con privacidad granular y limpieza automática de media.
-
-> [!IMPORTANT]
-> **Ciclo de Vida de Adjuntos**: Los archivos multimedia subidos para historias (bajo el prefijo `attachments/stories/`) se eliminan automáticamente del storage (S3/MinIO) después de **24 horas** mediante reglas de ciclo de vida configuradas en el servidor.
-
-| Método | Endpoint | Descripción | Auth |
-|--------|----------|-----------|------|
-| POST | `/stories` | Publicar story | Bearer |
-| GET | `/stories` | Listar stories de contactos | Bearer |
-| GET | `/stories/my` | Listar mis stories | Bearer |
-| DELETE | `/stories/:id` | Eliminar story | Bearer |
-| POST | `/stories/:id/view` | Registrar vista | Bearer |
-| POST | `/stories/:id/react` | Reaccionar a story | Bearer |
-| GET | `/stories/:id/views` | Ver lista de vistas | Bearer |
-
-### Modos de Privacidad
-
-| Privacidad | Descripción |
-|------------|-------------|
-| `everyone` | Visible para todos |
-| `contacts` | Solo contactos |
-| `contacts_except` | Contactos excepto algunos |
-| `selected` | Solo usuarios seleccionados |
-| `only_me` | Solo yo (no visible para otros) |
+### Makefile Commands
 
 ```bash
-# 1. Obtener URLs (upload_url para el PUT y file_url para la DB)
-curl -X POST http://localhost:3000/attachments/upload-url \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"chat_id": null, "file_name": "story.jpg", "content_type": "image/jpeg"}'
-
-# 2. Subir archivo binario (Directo a S3/MinIO)
-curl -X PUT "{upload_url_recibida}" \
-  -H "Content-Type: image/jpeg" \
-  --data-binary @story.jpg
-
-# 3. Publicar story usando la file_url
-curl -X POST http://localhost:3000/stories \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "content_url": "{file_url_recibida}",
-    "content_type": "image",
-    "caption": "Mi historia efímera",
-    "privacy": "contacts"
-  }'
+make dev       # Start all infrastructure services
+make stop      # Stop all services
+make migrate   # Run pending database migrations
+make test      # Run all workspace tests
+make lint      # Check formatting and run clippy
+make build     # Compile release binary
 ```
 
-## Endpoints — Fase 08 (Notificaciones)
+## API Reference
 
-Push notifications y notificaciones in-app.
+All endpoints use JSON (`Content-Type: application/json`). Authenticated endpoints require a `Bearer` token in the `Authorization` header.
 
-| Método | Endpoint | Descripción | Auth |
-|--------|----------|-----------|------|
-| GET | `/notifications` | Listar notificaciones | Bearer |
-| PATCH | `/notifications/:id` | Marcar notificación como leída | Bearer |
-| PATCH | `/notifications/read-all` | Marcar todas como leídas | Bearer |
-| DELETE | `/notifications/read` | Eliminar notificaciones leídas | Bearer |
-| PATCH | `/chats/:id/settings` | Configurar chat (silenciar, pinear, archivar) | Bearer |
+### Authentication
 
-### Configuración de Chat
+| Method   | Endpoint                 | Description                    | Auth   |
+| -------- | ------------------------ | ------------------------------ | ------ |
+| `POST`   | `/auth/register`         | Send registration OTP          | No     |
+| `POST`   | `/auth/verify-phone`     | Verify OTP and create user     | No     |
+| `POST`   | `/auth/login`            | Send login OTP                 | No     |
+| `POST`   | `/auth/login/verify`     | Verify OTP and receive tokens  | No     |
+| `POST`   | `/auth/refresh`          | Renew access token             | No     |
+| `POST`   | `/auth/logout`           | End current session            | Bearer |
+| `GET`    | `/auth/sessions`         | List active sessions           | Bearer |
+| `DELETE` | `/auth/sessions/:id`     | Revoke specific session        | Bearer |
+| `POST`   | `/auth/recover`          | Send recovery OTP              | No     |
+| `POST`   | `/auth/recover/verify`   | Verify recovery and get tokens | No     |
+| `POST`   | `/auth/2fa/setup`        | Initialize TOTP 2FA setup      | Bearer |
+| `POST`   | `/auth/2fa/setup/verify` | Confirm TOTP code              | Bearer |
+| `POST`   | `/auth/2fa/verify`       | Verify TOTP after login        | No     |
+| `GET`    | `/health`                | Health check                   | No     |
+
+<details>
+<summary><strong>📋 Auth Flow Examples</strong></summary>
+
+#### Registration
 
 ```bash
-# Silenciar chat por 24 horas
-curl -X PATCH http://localhost:3000/chats/{chat_id}/settings \
-  -H "Authorization: Bearer $TOKEN" \
+# 1. Request OTP
+curl -X POST http://localhost:3000/auth/register \
   -H "Content-Type: application/json" \
-  -d '{"is_muted": true, "muted_until": "2024-01-16T12:00:00Z"}'
+  -d '{"phone":"+573001234567","device_id":"uuid","device_name":"MyPhone","device_type":"android"}'
 
-# Pinear chat
-curl -X PATCH http://localhost:3000/chats/{chat_id}/settings \
-  -H "Authorization: Bearer $TOKEN" \
+# 2. Retrieve OTP from Redis (development only)
+docker exec messenger_backend-redis-1 redis-cli GET "otp:register:+573001234567"
+
+# 3. Verify OTP and complete registration
+curl -X POST http://localhost:3000/auth/verify-phone \
   -H "Content-Type: application/json" \
-  -d '{"is_pinned": true}'
+  -d '{"phone":"+573001234567","code":"123456","device_id":"uuid","device_name":"MyPhone","device_type":"android"}'
+# → { "access_token": "...", "refresh_token": "...", "expires_in": 3600, "user": {...} }
 ```
 
-### Push Notifications
-
-El servidor envía notificaciones push cuando el usuario está offline:
-- **FCM** (Firebase Cloud Messaging) para Android/Web
-- **APNs** (Apple Push Notification service) para iOS
-
-> **Nota**: El payload del push NUNCA incluye el contenido del mensaje por privacidad.
-> 
-## Endpoints — Fase 09 (Gestión de Grupos y Canales)
-
-Administración avanzada de miembros, roles y seguridad en grupos/canales con cifrado E2E.
-
-| Método | Endpoint | Descripción | Auth |
-|--------|----------|-----------|------|
-| GET | `/chats/:id/participants` | Listar miembros del grupo | Bearer |
-| POST | `/chats/:id/participants` | Añadir miembro al grupo | Bearer |
-| DELETE | `/chats/:id/participants/:user_id` | Eliminar miembro del grupo | Bearer |
-| PATCH | `/chats/:id/participants/:user_id/role` | Cambiar rol (member, moderator, admin) | Bearer |
-| POST | `/chats/:id/invite-link` | Crear o refrescar link de invitación | Bearer |
-| DELETE | `/chats/:id/invite-link` | Eliminar link de invitación | Bearer |
-| POST | `/chats/join/:slug` | Unirse a grupo mediante link | Bearer |
-| POST | `/chats/:id/rotate-key` | Rotar llave del grupo (E2EE) | Bearer |
-| POST | `/chats/:id/transfer-ownership` | Traspasar propiedad del grupo | Bearer |
-
-### Roles de Participante
-
-- `owner`: Creador del grupo (permisos totales, solo 1).
-- `admin`: Puede gestionar miembros y settings.
-- `moderator`: Puede gestionar mensajes de otros.
-- `member`: Participante estándar.
-
-### Invitaciones por Link
-
-Cuando un usuario se une mediante un link de invitación (`GET /chats/join/:slug`), si el grupo es E2EE, el servidor retornará `key_rotation_required: true`. Un administrador deberá ejecutar `/rotate-key` para proveer la llave del grupo al nuevo miembro de forma segura.
-
-## Endpoints — Fase 10 (Búsqueda y Contactos)
-
-Gestión de la agenda de contactos, bloqueo de usuarios y búsqueda global con protección de privacidad.
-
-| Método | Endpoint | Descripción | Auth |
-|--------|----------|-----------|------|
-| GET | `/users/search` | Búsqueda global de usuarios por username/teléfono | Bearer |
-| GET | `/users/me/profile` | Obtener mi perfil completo | Bearer |
-| GET | `/users/:id/profile` | Obtener perfil público de otro usuario | Bearer |
-| GET | `/contacts` | Listar mi agenda de contactos | Bearer |
-| POST | `/contacts` | Añadir un contacto manualmente | Bearer |
-| PATCH | `/contacts/:id` | Editar nombre local de un contacto | Bearer |
-| DELETE | `/contacts/:id` | Eliminar de la agenda | Bearer |
-| POST | `/contacts/sync` | Sincronización masiva (Privacy-Preserving) | Bearer |
-| GET | `/blocks` | Listar usuarios bloqueados | Bearer |
-| POST | `/blocks/:user_id` | Bloquear usuario | Bearer |
-| DELETE | `/blocks/:user_id` | Desbloquear usuario | Bearer |
-
-### Sincronización y Privacidad
-
-Para proteger la privacidad de los usuarios, la sincronización de contactos no envía los números de teléfono en texto plano. Se utiliza un mecanismo de **Hashing con Sal**:
-
-1. El cliente solicita el `salt` global (actualmente gestionado por el sistema).
-2. El cliente concatena el número en formato E.164 con el salt: `hash = SHA256(phone + salt)`.
-3. El servidor busca coincidencias contra los hashes pre-calculados en la base de datos.
+#### Login
 
 ```bash
-# Ejemplo de sincronización
-curl -X POST http://localhost:3000/contacts/sync \
-  -H "Authorization: Bearer $TOKEN" \
+# 1. Request OTP
+curl -X POST http://localhost:3000/auth/login \
   -H "Content-Type: application/json" \
-  -d '{
-    "contacts": [
-      { "phone_hash": "e3b0c442...", "local_name": "Juan Pérez" },
-      { "phone_hash": "8feb2331...", "local_name": "Mamá" }
-    ]
-  }'
+  -d '{"phone":"+573001234567","device_id":"uuid","device_name":"MyPhone","device_type":"android"}'
+
+# 2. Verify OTP
+curl -X POST http://localhost:3000/auth/login/verify \
+  -H "Content-Type: application/json" \
+  -d '{"phone":"+573001234567","code":"123456","device_id":"uuid","device_name":"MyPhone","device_type":"android"}'
 ```
 
-## Endpoints — Fase 04 (Cifrado E2E)
+</details>
 
-Gestión de claves criptográficas para el protocolo X3DH.
+### E2E Encryption Keys (X3DH)
 
-| Método | Endpoint | Descripción | Auth |
-|--------|----------|-----------|------|
-| POST | `/keys/upload` | Sube Identity Key y Signed Prekey | Bearer |
-| POST | `/keys/upload-prekeys` | Sube lote de One-Time Prekeys | Bearer |
-| GET | `/keys/me/count` | Obtiene conteo de OPKs disponibles | Bearer |
-| GET | `/keys/:user_id` | Obtiene bundle de claves públicas de un usuario | Bearer |
-| GET | `/keys/:user_id/fingerprint` | Obtiene huella digital de la Identity Key | Bearer |
+| Method | Endpoint                     | Description                         | Auth   |
+| ------ | ---------------------------- | ----------------------------------- | ------ |
+| `POST` | `/keys/upload`               | Upload Identity Key + Signed Prekey | Bearer |
+| `POST` | `/keys/upload-prekeys`       | Upload batch of One-Time Prekeys    | Bearer |
+| `GET`  | `/keys/me/count`             | Get available OPK count             | Bearer |
+| `GET`  | `/keys/:user_id`             | Fetch user's public key bundle      | Bearer |
+| `GET`  | `/keys/:user_id/fingerprint` | Get Identity Key fingerprint        | Bearer |
 
-### Flujo de Cifrado (X3DH)
+<details>
+<summary><strong>📋 Key Exchange Examples</strong></summary>
 
 ```bash
-# 1. El usuario sube su Identity Key y Signed Prekey al registrarse/iniciar sesión
+# 1. Upload Identity Key and Signed Prekey (after registration)
 curl -X POST http://localhost:3000/keys/upload \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"identity_key":"IK_BASE64","signed_prekey":{"id":1,"key":"SPK_BASE64","signature":"SIG_BASE64"}}'
 
-# 2. El usuario sube un lote de One-Time Prekeys (ej. 50 claves)
+# 2. Upload One-Time Prekeys (batch of 50)
 curl -X POST http://localhost:3000/keys/upload-prekeys \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '[{"id":1,"key":"OPK1_BASE64"},{"id":2,"key":"OPK2_BASE64"}]'
 
-# 3. Para iniciar un chat, se solicita el "Bundle" del destinatario
-curl -X GET http://localhost:3000/keys/00000000-0000-0000-0000-000000000002 \
+# 3. Fetch recipient's key bundle to initiate a chat
+curl http://localhost:3000/keys/{recipient_user_id} \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-### Flujo de Registro
+</details>
+
+### Chats & Messages
+
+| Method   | Endpoint                                       | Description                      | Auth   |
+| -------- | ---------------------------------------------- | -------------------------------- | ------ |
+| `POST`   | `/chats`                                       | Create private or group chat     | Bearer |
+| `GET`    | `/chats`                                       | List user's chats (paginated)    | Bearer |
+| `GET`    | `/chats/:id`                                   | Get chat by ID                   | Bearer |
+| `PATCH`  | `/chats/:id`                                   | Update chat (name, avatar)       | Bearer |
+| `DELETE` | `/chats/:id`                                   | Delete chat                      | Bearer |
+| `POST`   | `/chats/:id/messages`                          | Send encrypted message           | Bearer |
+| `GET`    | `/chats/:id/messages`                          | List messages (cursor-paginated) | Bearer |
+| `PATCH`  | `/chats/:id/messages/:msg_id`                  | Edit message                     | Bearer |
+| `DELETE` | `/chats/:id/messages/:msg_id`                  | Delete message                   | Bearer |
+| `POST`   | `/chats/:id/messages/read`                     | Mark messages as read            | Bearer |
+| `POST`   | `/chats/:id/messages/:msg_id/reactions`        | Add reaction                     | Bearer |
+| `DELETE` | `/chats/:id/messages/:msg_id/reactions/:emoji` | Remove reaction                  | Bearer |
+| `POST`   | `/attachments/upload-url`                      | Generate pre-signed upload URL   | Bearer |
+| `POST`   | `/attachments/confirm`                         | Confirm uploaded attachment      | Bearer |
+
+<details>
+<summary><strong>📋 Messaging Examples</strong></summary>
 
 ```bash
-# 1. Solicitar OTP
-curl -X POST http://localhost:3000/auth/register \
+# Send an E2E encrypted message
+curl -X POST http://localhost:3000/chats/{chat_id}/messages \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"phone":"+573001234567","device_id":"uuid","device_name":"TestPhone","device_type":"android"}'
+  -d '{
+    "content_encrypted": "BASE64_AES_GCM_CIPHERTEXT",
+    "content_iv": "BASE64_12_BYTES",
+    "message_type": "text"
+  }'
 
-# 2. Verificar OTP (el código llega a Redis: otp:register:{phone})
-redis-cli GET otp:register:+573001234567
-
-# 3. Confirmar registro
-curl -X POST http://localhost:3000/auth/verify-phone \
-  -H "Content-Type: application/json" \
-  -d '{"phone":"+573001234567","code":"123456","device_id":"uuid","device_name":"TestPhone","device_type":"android"}'
-
-# Response: { "access_token": "...", "refresh_token": "...", "expires_in": 900, "user": {...} }
-```
-
-### Flujo de Login
-
-```bash
-# 1. Solicitar OTP
-curl -X POST http://localhost:3000/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"phone":"+573001234567","device_id":"uuid","device_name":"TestPhone","device_type":"android"}'
-
-# 2. Verificar OTP
-curl -X POST http://localhost:3000/auth/login/verify \
-  -H "Content-Type: application/json" \
-  -d '{"phone":"+573001234567","code":"123456","device_id":"uuid","device_name":"TestPhone","device_type":"android"}'
-```
-
-## Endpoints — Fase 11 (Performance y Caché)
-
-Redis se utiliza en 7 roles distintos para optimizar el rendimiento del sistema:
-
-| Rol | Clave | Descripción | TTL |
-|-----|-------|-------------|-----|
-| 1 | `profile:{user_id}` | Cache de perfiles públicos | 5 min |
-| 2 | `session:{session_id}` | Validación de sesión activa | 15 min |
-| 3 | `presence:{user_id}` | Estado online/offline (WS) | 65s |
-| 4 | `rate:{endpoint}:{id}` | Rate limiting (sliding window) | 60s |
-| 5 | `user:{user_id}:events` | Pub/Sub para eventos | N/A |
-| 6 | `push:queue` | Cola de notificaciones push | N/A |
-| 7 | `refresh:{hash}` | Refresh tokens (rotación) | 7 días |
-
-### Rate Limiting
-
-El rate limiting usa sliding window con script Lua para operaciones atómicas:
-
-```bash
-# Headers de rate limit en respuestas
-X-RateLimit-Limit: 100
-X-RateLimit-Remaining: 87
-X-RateLimit-Reset: 1705329600
-
-# Si se excede el límite
-HTTP 429 Too Many Requests
-Retry-After: 23
-```
-
-### Límites configurados
-
-| Endpoint | Límite | Ventana |
-|----------|--------|---------|
-| `/auth/login`, `/auth/register` | 10 | 60s |
-| `/users/search` | 30 | 60s |
-| Envío de mensajes | 100 | 60s |
-| Upload de archivos | 20 | 60s |
-| API general | 300 | 60s |
-
-### Cache de Perfiles
-
-Los perfiles de usuario se cachean en Redis para reducir consultas a la DB:
-
-```bash
-# Obtener perfil (primero cache, luego DB)
-curl -X GET http://localhost:3000/users/:id/profile \
+# Cursor-based message pagination
+curl "http://localhost:3000/chats/{chat_id}/messages?limit=50" \
   -H "Authorization: Bearer $TOKEN"
 
-# Invalidar cache al actualizar perfil
-# Ocurre automáticamente tras TTL de 5 minutos
+# Load older messages
+curl "http://localhost:3000/chats/{chat_id}/messages?cursor={cursor}&direction=before&limit=50" \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
-### Optimización de PostgreSQL
+</details>
 
-La migración `018_performance_autovacuum.sql` configura autovacuum para tablas de alta escritura:
+### Real-Time (WebSocket)
 
-```sql
--- messages: writes más frecuentes
-ALTER TABLE messages SET (
-    autovacuum_vacuum_scale_factor = 0.01,
-    autovacuum_analyze_scale_factor = 0.005
-);
+| Method | Endpoint          | Description          | Auth              |
+| ------ | ----------------- | -------------------- | ----------------- |
+| `GET`  | `/ws?token={jwt}` | Upgrade to WebSocket | JWT (query param) |
+
+**Server → Client Events:**
+
+| Event                          | Description                      |
+| ------------------------------ | -------------------------------- |
+| `new_message`                  | A new message was sent in a chat |
+| `typing_start` / `typing_stop` | User started/stopped typing      |
+| `messages_read`                | Messages were marked as read     |
+| `user_online` / `user_offline` | Presence status change           |
+
+**Client → Server Messages:**
+
+```json
+{ "type": "typing_start", "payload": { "chat_id": "..." } }
+{ "type": "typing_stop",  "payload": { "chat_id": "..." } }
+{ "type": "sync_request", "payload": { "since": "2026-01-15T10:30:00Z" } }
 ```
 
-Los índices existentes optimizan las queries más frecuentes:
-- `idx_messages_chat_created` — paginación de mensajes
-- `idx_users_phone` — búsqueda por teléfono
-- `idx_chat_participants_active` — miembros activos de grupo
+**Redis Pub/Sub Channels:**
 
-## Endpoints — Fase 12 (Observabilidad y Hardening)
+| Channel                 | Purpose                            |
+| ----------------------- | ---------------------------------- |
+| `user:{user_id}:events` | User-targeted events               |
+| `chat:{chat_id}:events` | Chat-scoped events                 |
+| `presence:{user_id}`    | Online/offline presence (TTL: 65s) |
 
-Implementación de métricas con Prometheus, tracing con request ID y monitoreo de infraestructura.
+### Stories
 
-| Método | Endpoint | Descripción | Auth |
-|--------|----------|-----------|------|
-| GET | `/metrics` | Exportador de métricas para Prometheus | No |
+| Method   | Endpoint             | Description            | Auth   |
+| -------- | -------------------- | ---------------------- | ------ |
+| `POST`   | `/stories`           | Publish story          | Bearer |
+| `GET`    | `/stories`           | List contacts' stories | Bearer |
+| `GET`    | `/stories/my`        | List own stories       | Bearer |
+| `DELETE` | `/stories/:id`       | Delete story           | Bearer |
+| `POST`   | `/stories/:id/view`  | Register view          | Bearer |
+| `POST`   | `/stories/:id/react` | React to story         | Bearer |
+| `GET`    | `/stories/:id/views` | View list              | Bearer |
 
-### Instrumentación de Métricas
+> [!NOTE]
+> Story media files (under `attachments/stories/`) are **automatically deleted** from S3/MinIO after 24 hours via lifecycle rules.
 
-Se han implementado métricas clave para monitorizar el estado y uso del sistema:
+**Privacy Modes:**
 
-| Métrica | Tipo | Descripción |
-|---------|------|-------------|
-| `messenger_http_request_duration_seconds` | Histogram | Latencia de peticiones HTTP por método y ruta |
-| `messenger_auth_attempts_total` | Counter | Intentos de login y registro por tipo y resultado |
-| `messenger_messages_sent_total` | Counter | Total de mensajes enviados exitosamente |
-| `messenger_active_ws_connections` | Gauge | Conexiones WebSocket activas actualmente |
-| `messenger_db_pool_active` | Gauge | Conexiones activas en el pool de PostgreSQL |
-| `messenger_db_pool_idle` | Gauge | Conexiones idle en el pool de PostgreSQL |
-| `messenger_redis_connected_clients` | Gauge | Número de clientes conectados a Redis |
+| Mode              | Visibility                     |
+| ----------------- | ------------------------------ |
+| `everyone`        | All users                      |
+| `contacts`        | Contacts only                  |
+| `contacts_except` | Contacts minus specified users |
+| `selected`        | Only specified users           |
+| `only_me`         | Private (only you)             |
 
-### Trazabilidad (Request ID)
+### Notifications
 
-Cada petición genera un `request_id` (UUID v4) que se propaga en:
-1. **Logs**: Cada línea de log incluye el context de la petición.
-2. **Response Headers**: Se incluye el header `x-request-id` para facilitar el debug desde el cliente.
-3. **Métricas**: Las latencias se pueden asociar a tipos de peticiones.
+| Method   | Endpoint                  | Description                         | Auth   |
+| -------- | ------------------------- | ----------------------------------- | ------ |
+| `GET`    | `/notifications`          | List notifications                  | Bearer |
+| `PATCH`  | `/notifications/:id`      | Mark as read                        | Bearer |
+| `PATCH`  | `/notifications/read-all` | Mark all as read                    | Bearer |
+| `DELETE` | `/notifications/read`     | Delete read notifications           | Bearer |
+| `PATCH`  | `/chats/:id/settings`     | Configure chat (mute, pin, archive) | Bearer |
 
-### Monitoreo en Tiempo Real
+### Groups & Channels
 
-El sistema incluye un **Background Metrics Worker** que actualiza cada 15 segundos el estado de los pools de datos, garantizando que el dashboard de Grafana refleje la carga real sin penalizar el rendimiento de los handlers.
+| Method   | Endpoint                                | Description                | Auth   |
+| -------- | --------------------------------------- | -------------------------- | ------ |
+| `GET`    | `/chats/:id/participants`               | List group members         | Bearer |
+| `POST`   | `/chats/:id/participants`               | Add member                 | Bearer |
+| `DELETE` | `/chats/:id/participants/:user_id`      | Remove member              | Bearer |
+| `PATCH`  | `/chats/:id/participants/:user_id/role` | Change role                | Bearer |
+| `POST`   | `/chats/:id/invite-link`                | Create/refresh invite link | Bearer |
+| `DELETE` | `/chats/:id/invite-link`                | Revoke invite link         | Bearer |
+| `POST`   | `/chats/join/:slug`                     | Join via invite link       | Bearer |
+| `POST`   | `/chats/:id/rotate-key`                 | Rotate group E2E key       | Bearer |
+| `POST`   | `/chats/:id/transfer-ownership`         | Transfer group ownership   | Bearer |
 
-## Inicio Rápido
+**Participant Roles:** `owner` → `admin` → `moderator` → `member`
 
-### Prerrequisitos
-- Docker y Docker Compose
-- Rust (stable toolchain)
-- `make` (opcional)
+> [!NOTE]
+> When a new member joins an E2E encrypted group via invite link, the server returns `key_rotation_required: true`. An admin must call `/rotate-key` to securely provision the group key.
 
-### Instalación
+### Search & Contacts
+
+| Method   | Endpoint             | Description                     | Auth   |
+| -------- | -------------------- | ------------------------------- | ------ |
+| `GET`    | `/users/search`      | Global search by username/phone | Bearer |
+| `GET`    | `/users/me/profile`  | Get own profile                 | Bearer |
+| `GET`    | `/users/:id/profile` | Get public profile              | Bearer |
+| `GET`    | `/contacts`          | List contact book               | Bearer |
+| `POST`   | `/contacts`          | Add contact                     | Bearer |
+| `PATCH`  | `/contacts/:id`      | Edit contact name               | Bearer |
+| `DELETE` | `/contacts/:id`      | Remove contact                  | Bearer |
+| `POST`   | `/contacts/sync`     | Privacy-preserving bulk sync    | Bearer |
+| `GET`    | `/blocks`            | List blocked users              | Bearer |
+| `POST`   | `/blocks/:user_id`   | Block user                      | Bearer |
+| `DELETE` | `/blocks/:user_id`   | Unblock user                    | Bearer |
+
+### Observability
+
+| Method | Endpoint   | Description                 | Auth |
+| ------ | ---------- | --------------------------- | ---- |
+| `GET`  | `/metrics` | Prometheus metrics exporter | No   |
+
+## Security Model
+
+Mesty is designed with a **zero-trust** approach to user data:
+
+| Aspect               | Implementation                                                                                                |
+| -------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **Message Privacy**  | Server is a zero-knowledge relay — all messages are E2E encrypted (AES-GCM). The server never sees plaintext. |
+| **Authentication**   | OTP-based (phone verification) + optional local PIN. No passwords stored server-side.                         |
+| **Token Signing**    | JWT with **Ed25519** asymmetric keys (not HMAC). Supports key rotation.                                       |
+| **Two-Factor Auth**  | TOTP with backup codes via `totp-rs`.                                                                         |
+| **Session Security** | Refresh token rotation (one-time use). Multi-device session management.                                       |
+| **Rate Limiting**    | Sliding window via Redis Lua scripts. Per-endpoint configurable limits.                                       |
+| **Contact Sync**     | Phone numbers are SHA-256 hashed with a global salt before transmission.                                      |
+| **HTTP Hardening**   | Security headers: `X-Content-Type-Options`, `X-Frame-Options`, `Strict-Transport-Security`, `X-Request-Id`.   |
+| **Push Privacy**     | Push notification payloads **never** include message content.                                                 |
+
+## Performance & Caching
+
+### Redis Roles
+
+Redis serves 7 distinct roles in the system:
+
+| #   | Key Pattern             | Purpose                           | TTL    |
+| --- | ----------------------- | --------------------------------- | ------ |
+| 1   | `profile:{user_id}`     | Public profile cache              | 5 min  |
+| 2   | `session:{session_id}`  | Active session validation         | 15 min |
+| 3   | `presence:{user_id}`    | Online/offline status (WebSocket) | 65s    |
+| 4   | `rate:{endpoint}:{id}`  | Rate limiting (sliding window)    | 60s    |
+| 5   | `user:{user_id}:events` | Pub/Sub event distribution        | —      |
+| 6   | `push:queue`            | Push notification job queue       | —      |
+| 7   | `refresh:{hash}`        | Refresh token rotation tracking   | 7 days |
+
+### Rate Limits
+
+| Endpoint                        | Limit   | Window |
+| ------------------------------- | ------- | ------ |
+| `/auth/login`, `/auth/register` | 10 req  | 60s    |
+| `/users/search`                 | 30 req  | 60s    |
+| Message sending                 | 100 req | 60s    |
+| File uploads                    | 20 req  | 60s    |
+| General API                     | 300 req | 60s    |
+
+Response headers: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, `Retry-After` (on 429).
+
+### PostgreSQL Tuning
+
+- **Autovacuum** tuned for high-write tables (`messages`, `chat_participants`, `notifications`)
+- **Key indexes**: `idx_messages_chat_created` (message pagination), `idx_users_phone` (phone lookup), `idx_chat_participants_active` (group member queries)
+
+## Deployment
+
+### Development
 
 ```bash
-# 1. Clonar el repositorio
-git clone https://github.com/Juliodvp29/messenger_backend.git
-cd messenger_backend
-
-# 2. Copiar archivo de entorno
-cp .env.example .env
-# Editar .env con JWT_SECRET válido (64 bytes en base64)
-
-# 3. Levantar infraestructura
+# Uses docker-compose.yml with lightweight local services
 make dev
-
-# 4. Aplicar migraciones pendientes
-# Nota: La característica 'migrate' de sqlx debe estar habilitada en el workspace
-sqlx migrate run --database-url postgres://messenger:messenger_secret@localhost:5434/messenger_dev
-
-# 5. Ejecutar la API
 cargo run -p api
 ```
 
-### Servicios Levantados
+### Production
 
-| Servicio | Puerto | Descripción |
-|----------|--------|-----------|
-| PostgreSQL | 5434 | Base de datos principal |
-| Redis | 6379 | Cache y cola de mensajes |
-| MinIO | 9000 | Storage (S3 compatible) |
-| MinIO Console | 9001 | Web UI para archivos |
-| Mailhog | 1025 | Servidor SMTP (dev) |
-| Mailhog UI | 8025 | Ver emails enviados |
+Mesty ships with a production-ready `docker-compose.prod.yml` that orchestrates the full stack:
 
-### Makefile
+```mermaid
+graph LR
+    CLIENT["Client"] --> CADDY["🔒 Caddy<br/><small>Auto-TLS / HTTPS</small>"]
+    CADDY -->|"/*"| API["⚡ Mesty API<br/><small>:3000</small>"]
+    CADDY -->|"/s3/*"| MINIO["📦 MinIO<br/><small>:9000</small>"]
+    API --> PG["🐘 PostgreSQL<br/><small>:5432</small>"]
+    API --> REDIS["🔴 Redis<br/><small>:6379</small>"]
+    API --> MINIO
+    MIGRATOR["🔄 Migrator<br/><small>ephemeral</small>"] --> PG
 
-```bash
-make dev      # Levanta todos los servicios
-make stop    # Detiene servicios
-make migrate # Ejecuta migraciones
-make seed    # Carga datos de desarrollo
-make test    # Ejecuta tests
-make lint    # Verifica formato y linting
+    style CADDY fill:#22b8cf,stroke:#333,color:#fff
+    style API fill:#4a9eff,stroke:#333,color:#fff
+    style PG fill:#336791,stroke:#333,color:#fff
+    style REDIS fill:#dc382d,stroke:#333,color:#fff
+    style MINIO fill:#c72c48,stroke:#333,color:#fff
+    style MIGRATOR fill:#868e96,stroke:#333,color:#fff
 ```
 
-## Desarrollo — Obteniendo el OTP
+| Service        | Image                           | Role                                   |
+| -------------- | ------------------------------- | -------------------------------------- |
+| **PostgreSQL** | `postgres:17-alpine`            | Primary database                       |
+| **Redis**      | `redis:8-alpine`                | Cache, Pub/Sub, queues                 |
+| **MinIO**      | `minio/minio`                   | S3-compatible object storage           |
+| **Caddy**      | `caddy:2-alpine`                | Reverse proxy with automatic HTTPS     |
+| **Mesty API**  | Custom (multi-stage Dockerfile) | Application server                     |
+| **Migrator**   | `sqlx-cli`                      | Runs migrations on startup (ephemeral) |
 
-En entorno local, el código OTP se almacena en Redis. Para obtenerlo:
+#### Deploy
 
 ```bash
-# Después de /auth/register
+# 1. Configure production environment
+cp .env.production.example .env.production
+# Edit .env.production with real credentials (see file for guidance)
+
+# 2. Launch the full stack
+docker-compose -f docker-compose.prod.yml up -d
+
+# 3. Verify
+curl https://your-domain.com/health
+```
+
+> [!IMPORTANT]
+> Before deploying, generate fresh **Ed25519 JWT keys** and set strong passwords for PostgreSQL, Redis, and MinIO. See `.env.production.example` for all required variables.
+
+## CI/CD
+
+GitHub Actions runs on every push and PR to `main` and `develop`:
+
+| Job              | Steps                                                                       |
+| ---------------- | --------------------------------------------------------------------------- |
+| **Code Quality** | `cargo fmt --check` → `cargo clippy -D warnings` → `cargo audit`            |
+| **Tests**        | PostgreSQL + Redis services → `sqlx migrate run` → `cargo test --workspace` |
+
+## Development
+
+### Retrieving OTP Codes (Local)
+
+In development, OTP codes are stored in Redis instead of being sent via SMS:
+
+```bash
+# After /auth/register
 docker exec messenger_backend-redis-1 redis-cli GET "otp:register:+573001234567"
 
-# Después de /auth/login
+# After /auth/login
 docker exec messenger_backend-redis-1 redis-cli GET "otp:login:+573001234567"
 
-# Después de /auth/recover
+# After /auth/recover
 docker exec messenger_backend-redis-1 redis-cli GET "otp:recover:+573001234567"
 ```
 
-Reemplazar `+573001234567` por el número de teléfono usado.
+### Code Conventions
 
-## Convenciones de Código
+- **Branch**: `develop` (main development branch)
+- **Commits**: [Conventional Commits](https://www.conventionalcommits.org/) (`feat`, `fix`, `chore`, `docs`, `test`, `refactor`)
+- **SQL**: Always use `sqlx::query!` / `sqlx::query_as!` for type-safe queries. Never interpolate user input.
+- **Dependencies**: `api → domain → infrastructure → shared` (enforced by crate boundaries)
+- **Errors**: Centralized `AppError` with `thiserror`. Infra errors → domain errors → HTTP responses.
+- **Auth**: JWT middleware on all protected routes. Ed25519 asymmetric signing.
 
-- Rama principal: `develop`
-- Commits: Conventional Commits (`feat`, `fix`, `chore`, `docs`, `test`, `refactor`)
-- Usar `sqlx::query!` / `sqlx::query_as!` para queries typesafe
-- Nunca interpolar input de usuario en SQL
-- Dirección de dependencias: `api -> domain -> infrastructure -> shared`
-- Errores centralizados con `thiserror`
-- Middleware de autenticación con JWT
+## Roadmap
 
+| Phase | Description                 | Status  |
+| ----- | --------------------------- | ------- |
+| 01    | Foundations & Configuration | ✅ Done |
+| 02    | Database & Migrations       | ✅ Done |
+| 03    | Authentication & Security   | ✅ Done |
+| 04    | End-to-End Encryption       | ✅ Done |
+| 05    | Chats & Messages            | ✅ Done |
+| 06    | Real-Time (WebSockets)      | ✅ Done |
+| 07    | Stories & Reactions         | ✅ Done |
+| 08    | Push Notifications          | ✅ Done |
+| 09    | Groups & Channels           | ✅ Done |
+| 10    | Search & Contacts           | ✅ Done |
+| 11    | Performance & Caching       | ✅ Done |
+| 12    | Observability & Hardening   | ✅ Done |
+| 13    | Deployment & Production     | ✅ Done |
 
-## Seguridad
+## Contributing
 
-- Autenticación: OTP + PIN local (el servidor nunca conoce el PIN)
-- Sesiones: JWT con rotación de refresh token (one-time use)
-- 2FA: TOTP con códigos de respaldo
-- Rate limiting en endpoints de login/OTP
-- El servidor es un relay cifrado — nunca desencripta mensajes
+Contributions are welcome! Please open an issue first to discuss what you'd like to change.
 
-## Documentación Adicional
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feat/amazing-feature`)
+3. Run quality checks (`make lint && make test`)
+4. Commit with [Conventional Commits](https://www.conventionalcommits.org/)
+5. Push and open a Pull Request
 
-- [backend_roadmap.md](./backend_roadmap.md) — Plan de desarrollo completo
-- [AGENTS.md](./AGENTS.md) — Instrucciones para agentes IA
+## License
+
+This project is licensed under the [MIT License](LICENSE).
+
+---
+
+<p align="center">
+  Built with 🦀 Rust by <a href="https://github.com/Juliodvp29">Julio Otero</a>
+</p>
