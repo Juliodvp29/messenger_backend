@@ -1,21 +1,21 @@
-# El dominio se toma automáticamente de la variable de entorno $DOMAIN
-# configurada en el archivo .env.production
+# The domain is taken automatically from the $DOMAIN environment variable
+# configured in the .env.production file.
 {$DOMAIN:localhost} {
     # -----------------------------------------------------------------
-    # Proxy para la API de Rust
+    # Reverse Proxy for Rust API
     # -----------------------------------------------------------------
-    # Redirigimos todas las peticiones generales (HTTP y WebSockets) a la API.
-    # Caddy maneja automáticamente la renegociación a WebSockets.
+    # Redirect all general requests (HTTP & WebSockets) to the API.
+    # Caddy automatically handles WebSocket upgrades.
     handle /* {
         reverse_proxy api:3000
     }
 
     # -----------------------------------------------------------------
-    # Proxy para el almacenamiento de archivos (MinIO)
+    # Reverse Proxy for Object Storage (MinIO)
     # -----------------------------------------------------------------
-    # Todas las rutas que empicen con /s3/ serán redirigidas al puerto 9000
-    # handle_path elimina el prefijo "/s3/" antes de enviarlo a MinIO
-    # Ejemplo: https://dominio.com/s3/bucket/file -> http://minio:9000/bucket/file
+    # All routes starting with /s3/ will be proxied to port 9000.
+    # handle_path removes the "/s3/" prefix before sending it to MinIO.
+    # Example: https://domain.com/s3/bucket/file -> http://minio:9000/bucket/file
     handle_path /s3/* {
         reverse_proxy minio:9000 {
             header_up Host {host}
@@ -26,11 +26,11 @@
     }
 
     # -----------------------------------------------------------------
-    # Proxy para la consola administrativa de MinIO
+    # Reverse Proxy for MinIO Admin Console
     # -----------------------------------------------------------------
-    # Útil para gestionar archivos y buckets manualmente. 
-    # ADVERTENCIA: Si es un entorno 100% público, considera comentar este bloque
-    # o restringirlo por IP.
+    # Useful for manually managing files and buckets.
+    # WARNING: If this is a 100% public environment, consider commenting out
+    # this block or restricting it by IP.
     handle_path /minio-admin/* {
         reverse_proxy minio:9001 {
             header_up Host {host}
@@ -41,11 +41,11 @@
     }
 }
 
-# IMPORTANTE:
-# Si NO vas a usar un dominio y en su lugar utilizas una dirección IP pública,
-# Caddy intentará generar un certificado TLS que puede fallar.
+# IMPORTANT:
+# If you are NOT going to use a domain and will use a public IP address instead,
+# Caddy will try to generate a TLS certificate and fail.
 #
-# Para despliegues locales o sólo por IP (HTTP plano), cambia la primera línea a:
+# For local deployments or flat HTTP IP-only setups, change the first line to:
 # :80 {
 #   ...
 # }

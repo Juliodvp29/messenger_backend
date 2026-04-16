@@ -10,7 +10,7 @@ async fn test_create_contact(pool: PgPool) -> sqlx::Result<()> {
     let repo = PostgresContactRepository::new(pool.clone(), None);
     let owner_id = UserId(uuid::Uuid::new_v4());
 
-    // Crear el usuario dueño primero para evitar violación de FK
+    // Create the owner user first to avoid FK violation
     sqlx::query("INSERT INTO users (id, phone, phone_hash) VALUES ($1, $2, $3)")
         .bind(owner_id.0)
         .bind("+573000000001")
@@ -39,7 +39,7 @@ async fn test_find_all_by_owner(pool: PgPool) -> sqlx::Result<()> {
     let repo = PostgresContactRepository::new(pool.clone(), None);
     let owner_id = UserId(uuid::Uuid::new_v4());
 
-    // Crear el usuario dueño primero para evitar violación de FK
+    // Create the owner user first to avoid FK violation
     sqlx::query("INSERT INTO users (id, phone, phone_hash) VALUES ($1, $2, $3)")
         .bind(owner_id.0)
         .bind("+573000000002")
@@ -74,7 +74,7 @@ async fn test_update_contact(pool: PgPool) -> sqlx::Result<()> {
     let repo = PostgresContactRepository::new(pool.clone(), None);
     let owner_id = UserId(uuid::Uuid::new_v4());
 
-    // Crear el usuario dueño primero para evitar violación de FK
+    // Create the owner user first to avoid FK violation
     sqlx::query("INSERT INTO users (id, phone, phone_hash) VALUES ($1, $2, $3)")
         .bind(owner_id.0)
         .bind("+573000000003")
@@ -111,7 +111,7 @@ async fn test_delete_contact(pool: PgPool) -> sqlx::Result<()> {
     let repo = PostgresContactRepository::new(pool.clone(), None);
     let owner_id = UserId(uuid::Uuid::new_v4());
 
-    // Crear el usuario dueño primero para evitar violación de FK
+    // Create the owner user first to avoid FK violation
     sqlx::query("INSERT INTO users (id, phone, phone_hash) VALUES ($1, $2, $3)")
         .bind(owner_id.0)
         .bind("+573000000004")

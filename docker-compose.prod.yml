@@ -1,5 +1,5 @@
 services:
-  # Base de Datos
+  # Database
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
@@ -16,7 +16,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # Base de Datos de Caché y Colas
+  # Cache and Job Queue Database
   redis:
     image: redis:8-alpine
     restart: unless-stopped
@@ -29,7 +29,7 @@ services:
       timeout: 3s
       retries: 5
 
-  # Almacenamiento S3 (MinIO)
+  # S3 Storage (MinIO)
   minio:
     image: minio/minio
     restart: unless-stopped
@@ -46,7 +46,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # Aplicación Principal (Rust)
+  # Main Application (Rust)
   api:
     build:
       context: .
@@ -58,12 +58,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    # Como la app no hace auto-migración al arrancar, usamos un script o 
-    # dejamos que 'make migrate' lo maneje
+    # Since the app doesn't auto-migrate on startup, we use a script or
+    # let 'make migrate' handle it
     ports:
-      - "3000:3000" # Mapeo interno opcional, Caddy lo usará por la red interna
+      - "3000:3000" # Optional internal mapping, Caddy will route via internal network
 
-  # Migraciones Automáticas (Container Efímero)
+  # Automatic Migrations (Ephemeral Container)
   migrator:
     image: getanteon/sqlx-cli:latest
     depends_on:
@@ -74,7 +74,7 @@ services:
     command: >
       sh -c "sqlx migrate run --database-url postgres://${DB_USER:-messenger}:${DB_PASSWORD}@postgres:5432/${DB_NAME:-messenger_prod} --source /migrations"
 
-  # Proxy Inverso Automático (Caddy)
+  # Automatic Reverse Proxy (Caddy)
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped

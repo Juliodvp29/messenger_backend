@@ -341,7 +341,7 @@ async fn publish_message_event(
                 .await
                 .map_err(|e| DomainError::Internal(format!("failed to publish user event: {e}")))?;
 
-            // 1. Verificar si el usuario está online
+            // 1. Check if the user is online
             let presence_key = format!("{}{}", PRESENCE_KEY_PREFIX, participant_id);
             let is_online: bool = redis.exists(&presence_key).await.unwrap_or(false);
 
@@ -360,7 +360,7 @@ async fn publish_message_event(
                         .is_some_and(|until| until > chrono::Utc::now());
 
                 if !is_muted {
-                    // 3. Encolar notificación Push
+                    // 3. Enqueue Push Notification
                     let job = PushNotificationJob {
                         user_id: participant_id,
                         notification_type: "new_message".to_string(),
