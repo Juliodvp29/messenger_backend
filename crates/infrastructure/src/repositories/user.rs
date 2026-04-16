@@ -403,7 +403,7 @@ impl PostgresUserRepository {
               AND (
                   u.username ILIKE $2
                   OR up.display_name ILIKE $2
-                  OR u.phone = $3
+                  OR u.phone ILIKE $3
               )
               AND NOT EXISTS (SELECT 1 FROM user_blocks ub WHERE ub.blocker_id = u.id AND ub.blocked_id = $1)
               AND NOT EXISTS (SELECT 1 FROM user_blocks ub WHERE ub.blocker_id = $1 AND ub.blocked_id = u.id)
