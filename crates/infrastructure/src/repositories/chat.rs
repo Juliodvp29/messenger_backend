@@ -1229,10 +1229,13 @@ impl ChatRepository for PostgresChatRepository {
     async fn mark_all_notifications_read(&self, user_id: Uuid) -> DomainResult<i32> {
         let count = sqlx::query_scalar::<_, i32>(
             r#"
-            UPDATE notifications
-            SET is_read = true, read_at = NOW()
-            WHERE user_id = $1 AND is_read = false
-            RETURNING COUNT(*)
+            WITH updated AS (
+                UPDATE notifications
+                SET is_read = true, read_at = NOW()
+                WHERE user_id = $1 AND is_read = false
+                RETURNING 1
+            )
+            SELECT COUNT(*)::int FROM updated
             "#,
         )
         .bind(user_id)
@@ -1246,9 +1249,12 @@ impl ChatRepository for PostgresChatRepository {
     async fn delete_read_notifications(&self, user_id: Uuid) -> DomainResult<i32> {
         let count = sqlx::query_scalar::<_, i32>(
             r#"
-            DELETE FROM notifications
-            WHERE user_id = $1 AND is_read = true
-            RETURNING COUNT(*)
+            WITH deleted AS (
+                DELETE FROM notifications
+                WHERE user_id = $1 AND is_read = true
+                RETURNING 1
+            )
+            SELECT COUNT(*)::int FROM deleted
             "#,
         )
         .bind(user_id)
