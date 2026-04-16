@@ -6,13 +6,16 @@ use uuid::Uuid;
 pub struct CreateUploadUrlRequest {
     pub file_type: String,
     pub file_size: i64,
-    pub chat_id: Uuid,
+    #[serde(default)]
+    pub chat_id: Option<Uuid>,
+    #[serde(default)]
     pub file_name: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct CreateUploadUrlResponse {
     pub upload_url: String,
+    pub file_url: String,
     pub attachment_id: Uuid,
     pub expires_at: DateTime<Utc>,
 }

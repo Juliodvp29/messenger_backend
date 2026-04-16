@@ -102,9 +102,19 @@ pub fn create_router(
         redis: redis_manager.clone(),
     };
 
+    let storage = Arc::new(S3StorageService::new(&config.s3));
+
+    // Apply S3 lifecycle rules on startup to ensure story files are cleaned up
+    let storage_clone = storage.clone();
+    tokio::spawn(async move {
+        if let Err(e) = storage_clone.apply_lifecycle_rules().await {
+            tracing::error!("Failed to apply init-time S3 lifecycle rules: {}", e);
+        }
+    });
+
     let attachments_state = AttachmentsState {
         chat_repo: chat_repo.clone(),
-        storage: Arc::new(S3StorageService::new(&config.s3)),
+        storage,
     };
 
     let story_repo: Arc<dyn StoryRepo> = Arc::new(PostgresStoryRepository::new(db_pool.clone()));

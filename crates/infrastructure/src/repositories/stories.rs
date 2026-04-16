@@ -28,7 +28,7 @@ impl StoryRepository for PostgresStoryRepository {
     ) -> Result<Story, Box<dyn std::error::Error + Send + Sync>> {
         let row = sqlx::query(
             r#"INSERT INTO stories (user_id, content_url, content_type, caption, privacy) 
-            VALUES ($1, $2, $3, $4, $5) RETURNING id, user_id, content_url, content_type, caption, privacy::text, created_at, expires_at, deleted_at"#)
+            VALUES ($1, $2, $3, $4, $5::story_privacy) RETURNING id, user_id, content_url, content_type, caption, privacy::text, created_at, expires_at, deleted_at"#)
             .bind(user_id).bind(content_url).bind(content_type).bind(caption).bind(privacy)
             .fetch_one(&self.pool).await?;
 

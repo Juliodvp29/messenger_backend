@@ -108,8 +108,8 @@ Gestión de conversaciones y mensajería con contenido cifrado E2E.
 | POST | `/chats/:id/messages/read` | Marcar mensajes como leídos | Bearer |
 | POST | `/chats/:id/messages/:msg_id/reactions` | Añadir reacción | Bearer |
 | DELETE | `/chats/:id/messages/:msg_id/reactions/:emoji` | Eliminar reacción | Bearer |
-| POST | `/attachments/upload-url` | Generar URL prefirmada para upload | Bearer |
-| POST | `/attachments/confirm` | Confirmar attachment subido | Bearer |
+| POST | `/attachments/upload-url` | Generar URL prefirmada (upload_url) y URL permanente (file_url) | Bearer |
+| POST | `/attachments/confirm` | Confirmar attachment subido (para mensajes de chat) | Bearer |
 
 ### Paginación de Mensajes
 
@@ -181,7 +181,10 @@ Canales usados para distribución entre instancias:
 
 ## Endpoints — Fase 07 (Stories y Reacciones)
 
-Stories efímeras con privacidad granular y tiempo real.
+Stories efímeras con privacidad granular y limpieza automática de media.
+
+> [!IMPORTANT]
+> **Ciclo de Vida de Adjuntos**: Los archivos multimedia subidos para historias (bajo el prefijo `attachments/stories/`) se eliminan automáticamente del storage (S3/MinIO) después de **24 horas** mediante reglas de ciclo de vida configuradas en el servidor.
 
 | Método | Endpoint | Descripción | Auth |
 |--------|----------|-----------|------|
@@ -204,14 +207,25 @@ Stories efímeras con privacidad granular y tiempo real.
 | `only_me` | Solo yo (no visible para otros) |
 
 ```bash
-# Publicar story
+# 1. Obtener URLs (upload_url para el PUT y file_url para la DB)
+curl -X POST http://localhost:3000/attachments/upload-url \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"chat_id": null, "file_name": "story.jpg", "content_type": "image/jpeg"}'
+
+# 2. Subir archivo binario (Directo a S3/MinIO)
+curl -X PUT "{upload_url_recibida}" \
+  -H "Content-Type: image/jpeg" \
+  --data-binary @story.jpg
+
+# 3. Publicar story usando la file_url
 curl -X POST http://localhost:3000/stories \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "content_url": "https://s3.../story_media/...",
+    "content_url": "{file_url_recibida}",
     "content_type": "image",
-    "caption": "Mi caption",
+    "caption": "Mi historia efímera",
     "privacy": "contacts"
   }'
 ```

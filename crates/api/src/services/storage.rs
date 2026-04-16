@@ -1,6 +1,10 @@
 use aws_sdk_s3::Client;
 use aws_sdk_s3::config::{Builder as S3ConfigBuilder, Credentials, Region};
 use aws_sdk_s3::presigning::PresigningConfig;
+use aws_sdk_s3::types::{
+    BucketLifecycleConfiguration, ExpirationStatus, LifecycleExpiration, LifecycleRule,
+    LifecycleRuleFilter,
+};
 use shared::config::S3Config;
 use std::time::Duration;
 
@@ -78,5 +82,45 @@ impl S3StorageService {
             self.bucket,
             key
         )
+    }
+
+    pub async fn apply_lifecycle_rules(&self) -> Result<(), ServiceError> {
+        let story_rule = LifecycleRule::builder()
+            .id("ExpireStoriesAfter24H")
+            .filter(
+                LifecycleRuleFilter::builder()
+                    .prefix("attachments/stories/")
+                    .build(),
+            )
+            .status(ExpirationStatus::Enabled)
+            .expiration(LifecycleExpiration::builder().days(1).build())
+            .build()
+            .map_err(|e| {
+                ServiceError::Internal(format!("Failed to build lifecycle rule: {}", e))
+            })?;
+
+        let config = BucketLifecycleConfiguration::builder()
+            .rules(story_rule)
+            .build()
+            .map_err(|e| {
+                ServiceError::Internal(format!("Failed to build lifecycle config: {}", e))
+            })?;
+
+        self.client
+            .put_bucket_lifecycle_configuration()
+            .bucket(&self.bucket)
+            .lifecycle_configuration(config)
+            .send()
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to apply S3 lifecycle rules: {:?}", e);
+                ServiceError::Internal(format!("Failed to apply lifecycle rules: {}", e))
+            })?;
+
+        tracing::info!(
+            "S3 lifecycle rules applied successfully to bucket {}",
+            self.bucket
+        );
+        Ok(())
     }
 }
