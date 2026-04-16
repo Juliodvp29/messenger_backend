@@ -546,14 +546,16 @@ impl ChatRepository for PostgresChatRepository {
         &self,
         input: NewPendingAttachment,
     ) -> DomainResult<PendingAttachment> {
-        ensure_active_membership_pool(&self.pool, input.uploader_id, input.chat_id).await?;
+        if let Some(chat_id) = input.chat_id {
+            ensure_active_membership_pool(&self.pool, input.uploader_id, chat_id).await?;
+        }
 
         let row = sqlx::query_as::<
             _,
             (
                 Uuid,
                 Uuid,
-                Uuid,
+                Option<Uuid>,
                 String,
                 String,
                 String,
@@ -607,7 +609,7 @@ impl ChatRepository for PostgresChatRepository {
             (
                 Uuid,
                 Uuid,
-                Uuid,
+                Option<Uuid>,
                 String,
                 String,
                 String,

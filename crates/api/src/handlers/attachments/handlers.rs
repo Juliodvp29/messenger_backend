@@ -32,18 +32,24 @@ pub async fn create_upload_url(
     validate_file_constraints(&req.file_type, req.file_size)?;
 
     let attachment_id = Uuid::new_v4();
-    let object_key = format!(
-        "attachments/{}/{}/{}",
-        req.chat_id,
-        attachment_id,
-        sanitize_file_name(req.file_name.as_deref())
-    );
+    let object_key = if let Some(chat_id) = req.chat_id {
+        state
+            .chat_repo
+            .get_chat_for_user(auth.user_id, chat_id)
+            .await?
+            .ok_or_else(|| {
+                DomainError::NotFound("chat not found or not a participant".to_string())
+            })?;
 
-    state
-        .chat_repo
-        .get_chat_for_user(auth.user_id, req.chat_id)
-        .await?
-        .ok_or_else(|| DomainError::NotFound("chat not found or not a participant".to_string()))?;
+        format!(
+            "attachments/chats/{}/{}/{}",
+            chat_id,
+            attachment_id,
+            sanitize_file_name(req.file_name.as_deref())
+        )
+    } else {
+        format!("attachments/stories/{}/{}", auth.user_id, attachment_id)
+    };
 
     let upload_url = state
         .storage
@@ -59,7 +65,7 @@ pub async fn create_upload_url(
             uploader_id: auth.user_id,
             chat_id: req.chat_id,
             object_key,
-            file_url,
+            file_url: file_url.clone(),
             file_type: req.file_type,
             file_size: req.file_size,
             file_name: req.file_name,
@@ -68,6 +74,7 @@ pub async fn create_upload_url(
 
     let response = CreateUploadUrlResponse {
         upload_url,
+        file_url,
         attachment_id,
         expires_at: Utc::now() + Duration::minutes(5),
     };

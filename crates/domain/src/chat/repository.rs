@@ -41,7 +41,7 @@ pub struct NewMessage {
 pub struct NewPendingAttachment {
     pub attachment_id: Uuid,
     pub uploader_id: Uuid,
-    pub chat_id: Uuid,
+    pub chat_id: Option<Uuid>,
     pub object_key: String,
     pub file_url: String,
     pub file_type: String,
