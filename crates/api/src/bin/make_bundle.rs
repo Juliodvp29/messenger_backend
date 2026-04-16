@@ -15,7 +15,7 @@ fn main() {
     // Signed Prekey (32 random bytes)
     let mut spk_bytes = [0u8; 32];
     rand::RngCore::fill_bytes(&mut csprng, &mut spk_bytes);
-    let signed_prekey_b64 = BASE64.encode(&spk_bytes);
+    let signed_prekey_b64 = BASE64.encode(spk_bytes);
 
     // Signature over the signed prekey bytes using identity key
     let signature = identity_signing_key.sign(&spk_bytes);
@@ -32,6 +32,6 @@ fn main() {
     println!("\"identity_key\": \"{}\"", identity_key_b64);
     println!("\"key\": \"{}\"", signed_prekey_b64);
     println!("\"signature\": \"{}\"", signature_b64);
-    println!("\"key\": \"{}\" (para OPK_1)", BASE64.encode(&opk1));
-    println!("\"key\": \"{}\" (para OPK_2)", BASE64.encode(&opk2));
+    println!("\"key\": \"{}\" (para OPK_1)", BASE64.encode(opk1));
+    println!("\"key\": \"{}\" (para OPK_2)", BASE64.encode(opk2));
 }
