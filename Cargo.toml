@@ -9,7 +9,7 @@ members = [
 
 [workspace.package]
 version = "0.1.0"
-edition = "2024"
+edition = "2026"
 publish = false
 
 [workspace.lints.rust]
@@ -25,17 +25,17 @@ tokio = { version = "1", features = ["full"] }
 tower = { version = "0.4" }
 tower-http = { version = "0.5", features = ["cors", "trace", "compression-gzip"] }
 
-# Base de datos
+# Database
 sqlx = { version = "0.8", default-features = false, features = ["postgres", "runtime-tokio-native-tls", "macros", "uuid", "chrono", "json", "migrate"] }
 
 # Redis
 redis = { version = "0.25", features = ["tokio-comp", "connection-manager", "aio"] }
 
-# Serialización
+# Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# Autenticación y seguridad
+# Authentication and security
 jsonwebtoken = "9"
 sha2 = "0.10"
 hex = "0.4"
@@ -44,20 +44,20 @@ base64 = "0.22"
 # argon2 removed (Fase 03: OTP + PIN local instead of password)
 totp-rs = { version = "5", features = ["qr"] }
 
-# Tipos utilitarios
+# Utility types
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 validator = { version = "0.19", features = ["derive"] }
 rand = "0.8"
 
-# Errores
+# Errors
 thiserror = "1"
 anyhow = "1"
 urlencoding = "2"
 async-trait = "0.1"
 parking_lot = "0.12"
 
-# Logging y métricas
+# Logging and metrics
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
@@ -70,7 +70,7 @@ aws-config = "1"
 # Email
 lettre = { version = "0.11", features = ["tokio1", "tokio1-native-tls"] }
 
-# Configuración
+# Configuration
 config = "0.14"
 dotenvy = "0.15"
 

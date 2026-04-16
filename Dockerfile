@@ -1,55 +1,52 @@
 # syntax=docker/dockerfile:1.4
 
-# Build stage
+# ── Build Stage ──────────────────────────────────────────────────────────────
 FROM rustlang/rust:nightly-slim AS builder
 
 WORKDIR /usr/src/app
 
-# Instalar dependencias necesarias para compilar (openssl, pkg-config)
+# Install build dependencies (openssl, pkg-config)
 RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
 
-# Copiar el manifiesto del workspace y los Cargo.toml de las cajas
+# Copy workspace manifest and crate-level Cargo.toml files
 COPY Cargo.toml Cargo.lock ./
 COPY crates/api/Cargo.toml crates/api/
 COPY crates/domain/Cargo.toml crates/domain/
 COPY crates/infrastructure/Cargo.toml crates/infrastructure/
 COPY crates/shared/Cargo.toml crates/shared/
 
-# Crear src falso para cachear dependencias
+# Create dummy source files to cache dependency compilation
 RUN mkdir -p crates/api/src crates/domain/src crates/infrastructure/src crates/shared/src \
     && touch crates/api/src/lib.rs crates/domain/src/lib.rs crates/infrastructure/src/lib.rs crates/shared/src/lib.rs \
     && echo "fn main() {}" > crates/api/src/main.rs
 
-# Construir dependencias (cache)
+# Build dependencies only (cached layer)
 RUN cargo build --release
 
-# Copiar el verdadero código fuente
+# Copy actual source code
 COPY crates/ crates/
 COPY migrations/ migrations/
 
-# Tocar los archivos para forzar recompilación de lo nuestro
+# Touch main.rs to force recompilation of our code (not deps)
 RUN touch crates/api/src/main.rs
 
-# ENV SQLX_OFFLINE=true # Descomentar si usas macros de query offline activado
-
-# Compilar release
+# Compile release binary
 RUN cargo build --release -p api
 
-# Runtime stage
+# ── Runtime Stage ────────────────────────────────────────────────────────────
 FROM debian:bookworm-slim
 
 WORKDIR /app
 
-# Instalar openssl y ca-certificates para conexiones seguras
+# Install runtime dependencies for TLS connections
 RUN apt-get update && apt-get install -y openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 
-# Copiar el binario compilado y el directorio de migraciones
-COPY --from=builder /usr/src/app/target/release/api /app/messenger-api
+# Copy compiled binary and migrations from builder
+COPY --from=builder /usr/src/app/target/release/api /app/mesty-api
 COPY --from=builder /usr/src/app/migrations /app/migrations
 
-# Exponer el puerto
 EXPOSE 3000
 
 ENV APP_ENV=production
 
-CMD ["/app/messenger-api"]
+CMD ["/app/mesty-api"]
