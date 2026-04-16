@@ -3,6 +3,7 @@ use aws_sdk_s3::config::{Builder as S3ConfigBuilder, Credentials, Region};
 use aws_sdk_s3::presigning::PresigningConfig;
 use aws_sdk_s3::types::{
     BucketLifecycleConfiguration, ExpirationStatus, LifecycleExpiration, LifecycleRule,
+    LifecycleRuleFilter,
 };
 use shared::config::S3Config;
 use std::time::Duration;
@@ -86,7 +87,7 @@ impl S3StorageService {
     pub async fn apply_lifecycle_rules(&self) -> Result<(), ServiceError> {
         let story_rule = LifecycleRule::builder()
             .id("ExpireStoriesAfter24H")
-            .prefix("attachments/stories/")
+            .filter(LifecycleRuleFilter::builder().prefix("attachments/stories/").build())
             .status(ExpirationStatus::Enabled)
             .expiration(LifecycleExpiration::builder().days(1).build())
             .build()
