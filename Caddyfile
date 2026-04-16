@@ -1,0 +1,51 @@
+# El dominio se toma automáticamente de la variable de entorno $DOMAIN
+# configurada en el archivo .env.production
+{$DOMAIN:localhost} {
+    # -----------------------------------------------------------------
+    # Proxy para la API de Rust
+    # -----------------------------------------------------------------
+    # Redirigimos todas las peticiones generales (HTTP y WebSockets) a la API.
+    # Caddy maneja automáticamente la renegociación a WebSockets.
+    handle /* {
+        reverse_proxy api:3000
+    }
+
+    # -----------------------------------------------------------------
+    # Proxy para el almacenamiento de archivos (MinIO)
+    # -----------------------------------------------------------------
+    # Todas las rutas que empicen con /s3/ serán redirigidas al puerto 9000
+    # handle_path elimina el prefijo "/s3/" antes de enviarlo a MinIO
+    # Ejemplo: https://dominio.com/s3/bucket/file -> http://minio:9000/bucket/file
+    handle_path /s3/* {
+        reverse_proxy minio:9000 {
+            header_up Host {host}
+            header_up X-Real-IP {remote}
+            header_up X-Forwarded-For {remote}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # -----------------------------------------------------------------
+    # Proxy para la consola administrativa de MinIO
+    # -----------------------------------------------------------------
+    # Útil para gestionar archivos y buckets manualmente. 
+    # ADVERTENCIA: Si es un entorno 100% público, considera comentar este bloque
+    # o restringirlo por IP.
+    handle_path /minio-admin/* {
+        reverse_proxy minio:9001 {
+            header_up Host {host}
+            header_up X-Real-IP {remote}
+            header_up X-Forwarded-For {remote}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+}
+
+# IMPORTANTE:
+# Si NO vas a usar un dominio y en su lugar utilizas una dirección IP pública,
+# Caddy intentará generar un certificado TLS que puede fallar.
+#
+# Para despliegues locales o sólo por IP (HTTP plano), cambia la primera línea a:
+# :80 {
+#   ...
+# }

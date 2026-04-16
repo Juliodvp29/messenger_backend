@@ -1,0 +1,100 @@
+services:
+  # Base de Datos
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    env_file: .env.production
+    environment:
+      POSTGRES_DB: ${DB_NAME:-messenger_prod}
+      POSTGRES_USER: ${DB_USER:-messenger}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-messenger} -d ${DB_NAME:-messenger_prod}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Base de Datos de Caché y Colas
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Almacenamiento S3 (MinIO)
+  minio:
+    image: minio/minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${S3_ROOT_PASSWORD}
+      MINIO_SERVER_URL: "https://${DOMAIN:-localhost}/s3"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Aplicación Principal (Rust)
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env.production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Como la app no hace auto-migración al arrancar, usamos un script o 
+    # dejamos que 'make migrate' lo maneje
+    ports:
+      - "3000:3000" # Mapeo interno opcional, Caddy lo usará por la red interna
+
+  # Migraciones Automáticas (Container Efímero)
+  migrator:
+    image: getanteon/sqlx-cli:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./migrations:/migrations
+    command: >
+      sh -c "sqlx migrate run --database-url postgres://${DB_USER:-messenger}:${DB_PASSWORD}@postgres:5432/${DB_NAME:-messenger_prod} --source /migrations"
+
+  # Proxy Inverso Automático (Caddy)
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    env_file: .env.production
+    environment:
+      - DOMAIN=${DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+      - minio
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  caddy_data:
+  caddy_config:
