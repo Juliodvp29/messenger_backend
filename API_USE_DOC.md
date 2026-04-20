@@ -24,7 +24,8 @@
 13. [User Blocks](#13-user-blocks)
 14. [WebSocket (Real-time)](#14-websocket-real-time)
 15. [Utility Endpoints](#15-utility-endpoints)
-16. [Error Reference](#16-error-reference)
+16. [WebRTC & Calling](#16-webrtc--calling)
+17. [Error Reference](#17-error-reference)
 
 ---
 
@@ -1861,7 +1862,172 @@ GET /metrics
 
 ---
 
-## 16. Error Reference
+## 16. WebRTC & Calling
+
+The backend facilitates peer-to-peer WebRTC connections (audio and video calls) via WebSocket signaling and provides timed TURN credentials for NAT traversal.
+
+### 16.1 Get TURN Credentials 🔒
+
+Returns short-lived, time-limited credentials for your WebRTC `RTCPeerConnection`'s `iceServers`. Includes public STUN servers and authenticated TURN servers.
+
+```
+GET /calls/turn-credentials
+```
+
+**Response `200 OK`:**
+
+```json
+{
+  "ice_servers": [
+    {
+      "urls": ["stun:stun.l.google.com:19302"]
+    },
+    {
+      "urls": ["turn:turn.example.com:3478"],
+      "username": "1734567890:uuid",
+      "credential": "<base64-hmac-sha1>"
+    }
+  ],
+  "expires_at": 1734567890
+}
+```
+
+### 16.2 Calling Signaling Lifecycle (WebSockets)
+
+Calls are negotiated over the `ws` connection. All call signaling actions are sent from the client as commands, and the server relays them as events to the peer.
+
+#### A) Initiating a Call
+**Client Setup:** Create an `RTCPeerConnection` with the `iceServers` from the REST endpoint. Capture media tracks, add them to the PC, create an SDP offer, set local description.
+
+**Client → Server (`call:initiate`):**
+```json
+{
+  "type": "call:initiate",
+  "payload": {
+    "receiver_id": "uuid",
+    "call_type": "audio", // or "video"
+    "offer": { /* SDP object */ }
+  }
+}
+```
+*Note: The server will automatically dispatch a Push Notification (`notification_type: 'call'`) to wake up the receiver's device.*
+
+**Server → Receiver (`call:incoming`):**
+```json
+{
+  "type": "call:incoming",
+  "payload": {
+    "call_id": "uuid",
+    "caller_id": "uuid",
+    "call_type": "audio",
+    "offer": { /* SDP object */ },
+    "timestamp": "2025-04-17T14:10:00Z"
+  }
+}
+```
+
+#### B) Accepting a Call
+**Receiver Setup:** Set remote description from the offer, create SDP answer, set local description.
+
+**Receiver → Server (`call:accept`):**
+```json
+{
+  "type": "call:accept",
+  "payload": {
+    "call_id": "uuid",
+    "answer": { /* SDP object */ }
+  }
+}
+```
+
+**Server → Caller (`call:accepted`):**
+```json
+{
+  "type": "call:accepted",
+  "payload": {
+    "call_id": "uuid",
+    "receiver_id": "uuid",
+    "answer": { /* SDP object */ },
+    "timestamp": "2025-04-17T14:10:05Z"
+  }
+}
+```
+
+#### C) Exchanging ICE Candidates
+**Peer → Server (`call:ice-candidate`):**
+```json
+{
+  "type": "call:ice-candidate",
+  "payload": {
+    "call_id": "uuid",
+    "receiver_id": "uuid-of-the-other-peer", 
+    "candidate": { /* ICE object */ }
+  }
+}
+```
+
+**Server → Peer (`call:ice-candidate`):**
+```json
+{
+  "type": "call:ice-candidate",
+  "payload": {
+    "call_id": "uuid",
+    "sender_id": "uuid",
+    "candidate": { /* ICE object */ },
+    "timestamp": "2025-04-17T14:10:02Z"
+  }
+}
+```
+
+#### D) Rejecting / Hanging Up a Call
+**Peer → Server (`call:reject` or `call:hangup`):**
+```json
+{
+  "type": "call:reject", // Used before accepting
+  "payload": {
+    "call_id": "uuid",
+    "reason": "busy" // or "rejected"
+  }
+}
+
+// OR
+
+{
+  "type": "call:hangup", // Used during active call
+  "payload": {
+    "call_id": "uuid"
+  }
+}
+```
+
+**Server → Peer (`call:rejected` or `call:ended`):**
+```json
+{
+  "type": "call:rejected",
+  "payload": {
+    "call_id": "uuid",
+    "receiver_id": "uuid",
+    "reason": "busy",
+    "timestamp": "2025-04-17T14:10:01Z"
+  }
+}
+
+// OR
+
+{
+  "type": "call:ended",
+  "payload": {
+    "call_id": "uuid",
+    "ended_by": "uuid",
+    "status": "ended", // "ended", "missed", "rejected", "busy"
+    "timestamp": "2025-04-17T14:15:00Z"
+  }
+}
+```
+
+---
+
+## 17. Error Reference
 
 All errors return a JSON body in at least one of these shapes:
 
