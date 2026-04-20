@@ -177,6 +177,9 @@ async fn handle_client_message(
     ws_state: Arc<WsState>,
 ) {
     match msg {
+        // ---------------------------------------------------------------
+        // Chat: Typing indicators
+        // ---------------------------------------------------------------
         WsClientMessage::TypingStart { chat_id } => {
             let payload = json!({
                 "type": "typing_start",
@@ -241,6 +244,10 @@ async fn handle_client_message(
                     .await;
             });
         }
+
+        // ---------------------------------------------------------------
+        // Chat: Sync
+        // ---------------------------------------------------------------
         WsClientMessage::SyncRequest { since } => {
             let chat_repo = ws_state.chat_repo.clone();
             let tx = tx.clone();
@@ -279,6 +286,289 @@ async fn handle_client_message(
                     });
                     let _ = tx.send(payload.to_string()).await;
                 }
+            });
+        }
+
+        // ---------------------------------------------------------------
+        // WebRTC Signaling: CallInitiate
+        // ---------------------------------------------------------------
+        WsClientMessage::CallInitiate {
+            receiver_id,
+            call_type,
+            offer,
+        } => {
+            use crate::services::push::{PushNotificationJob, enqueue_push_notification};
+            use domain::call::entities::CallType;
+
+            let call_type_domain = match call_type.as_str() {
+                "video" => CallType::Video,
+                _ => CallType::Audio,
+            };
+
+            let call_service = ws_state.call_service.clone();
+            let mut redis = redis.clone();
+            let ws_state_clone = ws_state.clone();
+            let tx_clone = tx.clone();
+            let caller_id = user_id;
+
+            tokio::spawn(async move {
+                let call = match call_service
+                    .initiate_call(caller_id, receiver_id, call_type_domain)
+                    .await
+                {
+                    Ok(c) => c,
+                    Err(e) => {
+                        // Notify caller of the error (e.g. receiver is busy)
+                        let err_payload = json!({
+                            "type": "call:error",
+                            "payload": { "message": e.to_string() },
+                            "timestamp": Utc::now().to_rfc3339()
+                        });
+                        let _ = tx_clone.send(err_payload.to_string()).await;
+                        return;
+                    }
+                };
+
+                // Build the `call:incoming` event for the receiver
+                let incoming = json!({
+                    "type": "call:incoming",
+                    "payload": {
+                        "call_id":   call.id,
+                        "caller_id": caller_id,
+                        "call_type": call_type_domain.as_db_str(),
+                        "offer":     offer,
+                        "timestamp": Utc::now().to_rfc3339()
+                    }
+                });
+
+                // Relay via Redis to receiver's WebSocket channel
+                let channel = format!("user:{}:events", receiver_id);
+                let _: Result<(), _> = redis::pipe()
+                    .publish(&channel, incoming.to_string())
+                    .query_async(&mut redis)
+                    .await;
+
+                // Mark call as ringing now that we've attempted delivery
+                let _ = call_service.mark_ringing(call.id).await;
+
+                // ALWAYS enqueue a push notification so devices wake up
+                // (especially iOS VoIP push, offline receivers, etc.)
+                let push_job = PushNotificationJob {
+                    user_id: receiver_id,
+                    notification_type: "call".to_string(),
+                    payload: json!({
+                        "call_id":    call.id,
+                        "caller_id":  caller_id,
+                        "call_type":  call_type_domain.as_db_str(),
+                        "title":      "Incoming Call",
+                        "body":       format!(
+                            "You have an incoming {} call",
+                            call_type_domain.as_db_str()
+                        ),
+                    }),
+                };
+
+                if let Err(e) =
+                    enqueue_push_notification(&mut ws_state_clone.redis.clone(), push_job).await
+                {
+                    tracing::warn!("Failed to enqueue call push notification: {}", e);
+                }
+
+                tracing::info!(
+                    call_id = %call.id,
+                    caller  = %caller_id,
+                    receiver = %receiver_id,
+                    "Call initiated and push notification enqueued"
+                );
+            });
+        }
+
+        // ---------------------------------------------------------------
+        // WebRTC Signaling: CallAccept
+        // ---------------------------------------------------------------
+        WsClientMessage::CallAccept { call_id, answer } => {
+            let call_service = ws_state.call_service.clone();
+            let mut redis = redis.clone();
+            let receiver_id = user_id;
+
+            tokio::spawn(async move {
+                let call = match call_service.accept_call(call_id, receiver_id).await {
+                    Ok(c) => c,
+                    Err(e) => {
+                        tracing::warn!(call_id = %call_id, "Failed to accept call: {}", e);
+                        return;
+                    }
+                };
+
+                // Relay `call:accepted` to the caller
+                let accepted = json!({
+                    "type": "call:accepted",
+                    "payload": {
+                        "call_id":     call_id,
+                        "receiver_id": receiver_id,
+                        "answer":      answer,
+                        "timestamp":   Utc::now().to_rfc3339()
+                    }
+                });
+
+                let channel = format!("user:{}:events", call.caller_id);
+                let _: Result<(), _> = redis::pipe()
+                    .publish(&channel, accepted.to_string())
+                    .query_async(&mut redis)
+                    .await;
+
+                tracing::info!(call_id = %call_id, "Call accepted");
+            });
+        }
+
+        // ---------------------------------------------------------------
+        // WebRTC Signaling: CallReject
+        // ---------------------------------------------------------------
+        WsClientMessage::CallReject { call_id, reason } => {
+            use domain::call::entities::CallStatus;
+
+            let call_service = ws_state.call_service.clone();
+            let mut redis = redis.clone();
+            let user_id_clone = user_id;
+
+            tokio::spawn(async move {
+                let reason_str = reason.unwrap_or_else(|| "rejected".to_string());
+                let terminal_status = if reason_str == "busy" {
+                    CallStatus::Busy
+                } else {
+                    CallStatus::Rejected
+                };
+
+                let call = match call_service
+                    .end_call(call_id, user_id_clone, terminal_status)
+                    .await
+                {
+                    Ok(c) => c,
+                    Err(e) => {
+                        tracing::warn!(call_id = %call_id, "Failed to reject call: {}", e);
+                        return;
+                    }
+                };
+
+                // Notify the caller that the call was rejected/busy
+                let rejected = json!({
+                    "type": "call:rejected",
+                    "payload": {
+                        "call_id":     call_id,
+                        "receiver_id": user_id_clone,
+                        "reason":      reason_str,
+                        "timestamp":   Utc::now().to_rfc3339()
+                    }
+                });
+
+                let channel = format!("user:{}:events", call.caller_id);
+                let _: Result<(), _> = redis::pipe()
+                    .publish(&channel, rejected.to_string())
+                    .query_async(&mut redis)
+                    .await;
+
+                tracing::info!(call_id = %call_id, "Call rejected");
+            });
+        }
+
+        // ---------------------------------------------------------------
+        // WebRTC Signaling: CallIceCandidate (relay only — NOT persisted)
+        // ---------------------------------------------------------------
+        WsClientMessage::CallIceCandidate {
+            call_id,
+            receiver_id,
+            candidate,
+        } => {
+            let sender_id = user_id;
+            let mut redis = redis.clone();
+
+            tokio::spawn(async move {
+                let relay = json!({
+                    "type": "call:ice-candidate",
+                    "payload": {
+                        "call_id":   call_id,
+                        "sender_id": sender_id,
+                        "candidate": candidate,
+                        "timestamp": Utc::now().to_rfc3339()
+                    }
+                });
+
+                let channel = format!("user:{}:events", receiver_id);
+                let _: Result<(), _> = redis::pipe()
+                    .publish(&channel, relay.to_string())
+                    .query_async(&mut redis)
+                    .await;
+            });
+        }
+
+        // ---------------------------------------------------------------
+        // WebRTC Signaling: CallHangup
+        // ---------------------------------------------------------------
+        WsClientMessage::CallHangup { call_id } => {
+            use domain::call::entities::CallStatus;
+
+            let call_service = ws_state.call_service.clone();
+            let mut redis = redis.clone();
+            let user_id_clone = user_id;
+
+            tokio::spawn(async move {
+                // Determine the right terminal status based on the call state
+                let call_before = match call_service
+                    .end_call(call_id, user_id_clone, CallStatus::Ended)
+                    .await
+                {
+                    Ok(c) => c,
+                    Err(_) => {
+                        // Try with Missed (if the receiver hasn't answered yet)
+                        match call_service
+                            .end_call(call_id, user_id_clone, CallStatus::Missed)
+                            .await
+                        {
+                            Ok(c) => c,
+                            Err(e) => {
+                                tracing::warn!(
+                                    call_id = %call_id,
+                                    "Failed to hang up call: {}",
+                                    e
+                                );
+                                return;
+                            }
+                        }
+                    }
+                };
+
+                let final_status = call_before.status.as_db_str();
+
+                // Notify BOTH participants (caller and receiver)
+                let ended = json!({
+                    "type": "call:ended",
+                    "payload": {
+                        "call_id":  call_id,
+                        "ended_by": user_id_clone,
+                        "status":   final_status,
+                        "timestamp": Utc::now().to_rfc3339()
+                    }
+                });
+                let ended_str = ended.to_string();
+
+                let peer_id = if call_before.caller_id == user_id_clone {
+                    call_before.receiver_id
+                } else {
+                    call_before.caller_id
+                };
+
+                let channel = format!("user:{}:events", peer_id);
+                let _: Result<(), _> = redis::pipe()
+                    .publish(&channel, ended_str)
+                    .query_async(&mut redis)
+                    .await;
+
+                tracing::info!(
+                    call_id  = %call_id,
+                    ended_by = %user_id_clone,
+                    status   = %final_status,
+                    "Call hung up"
+                );
             });
         }
     }
