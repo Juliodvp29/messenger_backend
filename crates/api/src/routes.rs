@@ -4,8 +4,10 @@ use crate::middleware::security::security_headers_middleware;
 use crate::services::metrics::{MetricsExtension, SharedMetrics, metrics_handler};
 use axum::{
     Router, middleware,
+    http::{HeaderValue, Method, header},
     routing::{delete, get, patch, post},
 };
+use tower_http::cors::CorsLayer;
 
 use crate::handlers::attachments::{AttachmentsState, confirm_attachment, create_upload_url};
 use crate::handlers::auth::{
@@ -314,6 +316,24 @@ pub fn create_router(
         .route("/auth/2fa/verify", post(two_fa_verify))
         .route("/auth/refresh", post(refresh));
 
+    let origins: Vec<HeaderValue> = config
+        .server
+        .cors_origins
+        .split(',')
+        .map(|s| s.parse().expect("Invalid CORS origin"))
+        .collect();
+
+    let cors = CorsLayer::new()
+        .allow_origin(origins)
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PATCH,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
+        .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
+
     public_routes
         .merge(ws_routes)
         .merge(protected_auth_routes)
@@ -325,6 +345,7 @@ pub fn create_router(
         .merge(protected_user_routes)
         .merge(protected_contact_routes)
         .merge(protected_block_routes)
+        .layer(cors)
         .layer(middleware::from_fn(security_headers_middleware))
         .layer(middleware::from_fn(logging_middleware))
         .layer(axum::extract::Extension(MetricsExtension(metrics)))
