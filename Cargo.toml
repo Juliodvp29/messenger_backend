@@ -29,7 +29,7 @@ tower-http = { version = "0.5", features = ["cors", "trace", "compression-gzip"]
 sqlx = { version = "0.8", default-features = false, features = ["postgres", "runtime-tokio-native-tls", "macros", "uuid", "chrono", "json", "migrate"] }
 
 # Redis
-redis = { version = "0.25", features = ["tokio-comp", "connection-manager", "aio"] }
+redis = { version = "0.27", features = ["tokio-comp", "connection-manager", "aio"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
