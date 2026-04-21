@@ -29,6 +29,7 @@ pub struct Config {
     pub smtp: SmtpConfig,
     pub sms: SmsConfig,
     pub push: PushConfig,
+    #[serde(default)]
     pub turn: TurnConfig,
 }
 
